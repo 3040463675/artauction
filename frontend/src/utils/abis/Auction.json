@@ -1,0 +1,271 @@
+[
+  {
+    "inputs": [
+      {
+        "name": "_nftContract",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "name": "auctionId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "name": "seller",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "name": "startingPrice",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "name": "endTime",
+        "type": "uint256"
+      }
+    ],
+    "name": "AuctionCreated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "name": "auctionId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "name": "bidder",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "BidPlaced",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "name": "auctionId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "name": "winner",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "name": "finalPrice",
+        "type": "uint256"
+      }
+    ],
+    "name": "AuctionEnded",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "name": "auctionId",
+        "type": "uint256"
+      }
+    ],
+    "name": "AuctionCancelled",
+    "type": "event"
+  },
+  {
+    "inputs": [
+      {
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "name": "startingPrice",
+        "type": "uint256"
+      },
+      {
+        "name": "reservePrice",
+        "type": "uint256"
+      },
+      {
+        "name": "minIncrement",
+        "type": "uint256"
+      },
+      {
+        "name": "duration",
+        "type": "uint256"
+      }
+    ],
+    "name": "createAuction",
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "name": "auctionId",
+        "type": "uint256"
+      }
+    ],
+    "name": "placeBid",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "name": "auctionId",
+        "type": "uint256"
+      }
+    ],
+    "name": "endAuction",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "name": "auctionId",
+        "type": "uint256"
+      }
+    ],
+    "name": "cancelAuction",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "name": "auctionId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getAuctionInfo",
+    "outputs": [
+      {
+        "components": [
+          { "name": "auctionId", "type": "uint256" },
+          { "name": "tokenId", "type": "uint256" },
+          { "name": "seller", "type": "address" },
+          { "name": "startingPrice", "type": "uint256" },
+          { "name": "reservePrice", "type": "uint256" },
+          { "name": "minIncrement", "type": "uint256" },
+          { "name": "startTime", "type": "uint256" },
+          { "name": "endTime", "type": "uint256" },
+          { "name": "highestBid", "type": "uint256" },
+          { "name": "highestBidder", "type": "address" },
+          { "name": "depositAmount", "type": "uint256" },
+          { "name": "status", "type": "uint8" },
+          { "name": "createdAt", "type": "uint256" }
+        ],
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "name": "auctionId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getBidHistory",
+    "outputs": [
+      {
+        "components": [
+          { "name": "bidder", "type": "address" },
+          { "name": "amount", "type": "uint256" },
+          { "name": "timestamp", "type": "uint256" }
+        ],
+        "name": "",
+        "type": "tuple[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getActiveAuctions",
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "platformFeeRate",
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "nftContractAddress",
+    "outputs": [
+      {
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "name": "newRate",
+        "type": "uint256"
+      }
+    ],
+    "name": "setPlatformFeeRate",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+]
