@@ -5,7 +5,13 @@
       <header class="app-header">
         <div class="header-content">
           <div class="logo" @click="$router.push('/')">
-            <el-icon :size="32"><Picture /></el-icon>
+            <div class="logo-icon-wrapper">
+              <svg viewBox="0 0 1024 1024" width="24" height="24">
+                <path fill="currentColor" d="M832 160H192c-17.7 0-32 14.3-32 32v640c0 17.7 14.3 32 32 32h640c17.7 0 32-14.3 32-32V192c0-17.7-14.3-32-32-32zm-608 80h136v136H224V240zm0 408h136v136H224V648zm408 136H496V648h136v128zm0-408H496V240h136v136zm240 408H736V648h136v136zm0-408H736V240h136v136zM360 496h304v32H360z"/>
+                <path fill="currentColor" d="M360 416h304v32H360z" opacity=".8"/>
+                <path fill="currentColor" d="M360 576h304v32H360z" opacity=".8"/>
+              </svg>
+            </div>
             <span class="logo-text">ArtChain</span>
           </div>
           
@@ -155,18 +161,38 @@ onMounted(async () => {
     gap: 12px;
     cursor: pointer;
     color: #fff;
-    transition: opacity 0.3s;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
     &:hover {
-      opacity: 0.8;
+      transform: scale(1.05);
+
+      .logo-icon-wrapper {
+        transform: rotate(15deg);
+        box-shadow: 0 0 20px rgba(102, 126, 234, 0.6);
+      }
+    }
+
+    .logo-icon-wrapper {
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      transition: all 0.4s ease;
+      color: #fff;
     }
 
     .logo-text {
-      font-size: 24px;
-      font-weight: 600;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #fff 30%, rgba(255, 255, 255, 0.7) 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
+      font-family: 'Inter', sans-serif;
     }
   }
 
