@@ -26,10 +26,11 @@ export interface Artwork {
 
 // 拍卖信息
 export interface Auction {
+  id: number
   auctionId: number
   tokenId: number
   artwork?: Artwork
-  seller: string
+  sellerAddress: string
   startingPrice: string
   reservePrice: string
   minIncrement: string
@@ -38,14 +39,18 @@ export interface Auction {
   highestBid: string
   highestBidder: string
   status: AuctionStatus
+  txHash?: string
   createdAt: number
 }
 
 // 出价记录
 export interface Bid {
-  bidder: string
+  id: number
+  auctionId: number
+  bidderAddress: string
   amount: string
-  timestamp: number
+  txHash?: string
+  createdAt: string
 }
 
 // 用户信息

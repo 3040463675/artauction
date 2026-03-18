@@ -48,7 +48,11 @@
 
             <!-- 用户菜单 -->
             <el-dropdown v-if="userStore.isConnected" trigger="click">
-              <el-avatar :size="36" class="user-avatar">
+              <el-avatar 
+                :size="36" 
+                class="user-avatar"
+                :src="userStore.userInfo?.avatar || 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?auto=format&fit=crop&q=80&w=200'"
+              >
                 <el-icon><User /></el-icon>
               </el-avatar>
               <template #dropdown>
@@ -73,7 +77,7 @@
       <main class="app-main">
         <router-view v-slot="{ Component }">
           <transition name="fade" mode="out-in">
-            <component :is="Component" />
+            <component :is="Component" :key="$route.fullPath" />
           </transition>
         </router-view>
       </main>

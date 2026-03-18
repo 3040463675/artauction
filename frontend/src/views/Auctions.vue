@@ -195,7 +195,10 @@ const handlePageChange = (newPage: number) => {
 }
 
 const goToDetail = (auction: any) => {
-  router.push(`/auction/${auction.auctionId}`)
+  // 优先使用数据库 id，如果没有则尝试 auctionId
+  const id = auction.id || auction.auctionId
+  console.log('[Debug] Navigating to Detail with ID:', id)
+  router.push(`/auction/${id}`)
 }
 
 onMounted(() => {
