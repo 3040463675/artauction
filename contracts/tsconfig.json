@@ -12,6 +12,6 @@
     "sourceMap": true,
     "resolveJsonModule": true
   },
-  "include": ["./src/**/*", "./scripts/**/*", "./test/**/*"],
+  "include": ["./contracts/**/*.sol", "./scripts/**/*.ts", "./test/**/*.ts"],
   "exclude": ["node_modules", "dist", "cache", "artifacts"]
 }

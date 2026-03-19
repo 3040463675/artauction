@@ -33,6 +33,14 @@
                   <div class="status-tag" :class="bid.bidStatus">
                     {{ bidStatusMap[bid.bidStatus] }}
                   </div>
+                  <el-button 
+                    class="delete-btn" 
+                    type="danger" 
+                    :icon="Delete" 
+                    circle 
+                    size="small"
+                    @click.stop="handleDelete(bid.id)"
+                  />
                 </div>
                 <div class="bid-content">
                   <h3 class="artwork-title">{{ bid.title }}</h3>
@@ -69,10 +77,12 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { Picture, Timer } from '@element-plus/icons-vue'
+import { Picture, Timer, Delete } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { getMyBids } from '@/api/auction'
 import { useUserStore } from '@/stores/user'
 import type { Auction } from '@/types'
+import { mockAuctions } from '@/utils/mockData'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -108,48 +118,44 @@ const fetchMyBids = async () => {
         currentPrice: item.highestBid || item.startingPrice
       }))
     } else {
-      // 模拟数据映射表
-      const mockDataMap: Record<string, any> = {
-        'mock-a1': { name: '未来之光', img: 'https://images.unsplash.com/photo-1547826039-bfc35e0f1ea8', price: '1.5' },
-        'mock-a2': { name: '深海共鸣', img: 'https://images.unsplash.com/photo-1541961017774-22349e4a1262', price: '2.8' },
-        'mock-a3': { name: '数字荒原', img: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5', price: '0.9' }
+      const localMockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
+      const resultBids: any[] = []
+      
+      // 1. 先加载本地存储中的所有记录（这些是用户真实参与过的）
+      Object.keys(localMockBids).forEach(id => {
+        const saved = localMockBids[id]
+        const mockInfo = mockAuctions.find(m => m.auctionId === id)
+        
+        resultBids.push({
+          id: id,
+          ...saved,
+          title: mockInfo?.artwork.name || saved.title,
+          imageUrl: mockInfo?.artwork.imageUrl || saved.imageUrl
+        })
+      })
+
+      // 2. 如果本地记录太少，补充一些默认的模拟数据（可选，为了页面好看）
+      if (resultBids.length < 3) {
+        mockAuctions.slice(0, 3).forEach((mock, index) => {
+          if (!localMockBids[mock.auctionId]) {
+            let defaultStatus = 'active'
+            if (index === 1) defaultStatus = 'won'
+            if (index === 2) defaultStatus = 'lost'
+            
+            resultBids.push({
+              id: mock.auctionId,
+              title: mock.artwork.name,
+              imageUrl: mock.artwork.imageUrl,
+              currentPrice: mock.highestBid,
+              myPrice: (Number(mock.highestBid) - 0.2).toFixed(1),
+              endTime: new Date(Date.now() + 86400000 * (index + 1)).toISOString(),
+              bidStatus: defaultStatus
+            })
+          }
+        })
       }
       
-      const localMockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
-      
-      bids.value = Object.keys(mockDataMap).map((id, index) => {
-        // 优先使用本地存储中的用户竞拍记录
-        if (localMockBids[id]) {
-          return {
-            id: id,
-            ...localMockBids[id],
-            title: mockDataMap[id].name, // 确保标题和图片一致
-            imageUrl: localMockBids[id].imageUrl || mockDataMap[id].img // 增加容错
-          }
-        }
-        
-        // 默认模拟数据
-        let defaultStatus = 'active'
-        if (index === 1) defaultStatus = 'won'
-        if (index === 2) defaultStatus = 'lost'
-        
-        return {
-          id: id,
-          title: mockDataMap[id].name,
-          imageUrl: mockDataMap[id].img,
-          currentPrice: mockDataMap[id].price,
-          myPrice: (Number(mockDataMap[id].price) - 0.2).toFixed(1),
-          endTime: new Date(Date.now() + 86400000 * (index + 1)).toISOString(),
-          bidStatus: defaultStatus
-        }
-      })
-      
-      // 合并本地存储中可能存在的、不在 mockDataMap 中的其他竞拍记录
-      Object.keys(localMockBids).forEach(id => {
-        if (!mockDataMap[id]) {
-          bids.value.push(localMockBids[id])
-        }
-      })
+      bids.value = resultBids
     }
   } catch (error) {
     console.error('Failed to fetch my bids:', error)
@@ -165,6 +171,32 @@ const formatTime = (time: string) => {
 
 const viewDetail = (id: string | number) => {
   router.push({ name: 'AuctionDetail', params: { id } })
+}
+
+const handleDelete = (id: string | number) => {
+  ElMessageBox.confirm(
+    '确认删除这条竞拍记录吗？删除后将无法恢复。',
+    '警告',
+    {
+      confirmButtonText: '确认删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+    }
+  ).then(() => {
+    // 从本地状态中移除
+    bids.value = bids.value.filter(item => item.id !== id)
+    
+    // 如果是模拟数据且在 localStorage 中，同步移除
+    const localMockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
+    if (localMockBids[id]) {
+      delete localMockBids[id]
+      localStorage.setItem('MOCK_USER_BIDS', JSON.stringify(localMockBids))
+    }
+    
+    ElMessage.success('删除成功')
+  }).catch(() => {
+    // 取消删除
+  })
 }
 
 onMounted(() => {
@@ -226,6 +258,11 @@ onMounted(() => {
   &:hover {
     transform: translateY(-8px);
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+
+    .artwork-preview .delete-btn {
+      opacity: 1;
+      transform: scale(1);
+    }
   }
 
   .artwork-preview {
@@ -261,6 +298,16 @@ onMounted(() => {
       &.active { background: rgba(59, 130, 246, 0.9); }
       &.won { background: rgba(34, 197, 94, 0.9); }
       &.lost { background: rgba(239, 68, 68, 0.9); }
+    }
+
+    .delete-btn {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      opacity: 0;
+      transition: all 0.3s;
+      transform: scale(0.8);
+      z-index: 10; // 确保在图片之上
     }
   }
 

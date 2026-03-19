@@ -129,6 +129,7 @@ import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { getHotAuctions, getEndingSoonAuctions } from '@/api/auction'
 import AuctionCard from '@/components/AuctionCard.vue'
+import { mockAuctions } from '@/utils/mockData'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -163,85 +164,14 @@ const stats = ref({
   totalVolume: '1,234.5'
 })
 
-// 模拟数据
-const mockHotAuctions = [
-  {
-    auctionId: 'mock-a1',
-    artwork: { name: '未来之光', imageUrl: 'https://images.unsplash.com/photo-1547826039-bfc35e0f1ea8?auto=format&fit=crop&q=80&w=1000' },
-    highestBid: '1.5',
-    startingPrice: '1.0',
-    status: 1,
-    endTime: Date.now() + 86400000
-  },
-  {
-    auctionId: 'mock-a2',
-    artwork: { name: '深海共鸣', imageUrl: 'https://images.unsplash.com/photo-1541961017774-22349e4a1262?auto=format&fit=crop&q=80&w=1000' },
-    highestBid: '2.8',
-    startingPrice: '2.0',
-    status: 1,
-    endTime: Date.now() + 172800000
-  },
-  {
-    auctionId: 'mock-a3',
-    artwork: { name: '数字荒原', imageUrl: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?auto=format&fit=crop&q=80&w=1000' },
-    highestBid: '0.9',
-    startingPrice: '0.5',
-    status: 1,
-    endTime: Date.now() + 259200000
-  },
-  {
-    auctionId: 'mock-a4',
-    artwork: { name: '城市之巅', imageUrl: 'https://images.unsplash.com/photo-1514924013411-cbf25faa35bb?auto=format&fit=crop&q=80&w=1000' },
-    highestBid: '3.2',
-    startingPrice: '2.5',
-    status: 1,
-    endTime: Date.now() + 345600000
-  }
-]
-
-const mockEndingSoonAuctions = [
-  {
-    auctionId: 'mock-a5',
-    artwork: { name: '最后的晚餐 - 重构', imageUrl: 'https://images.unsplash.com/photo-1554188248-986adbb73be4?auto=format&fit=crop&q=80&w=1000' },
-    highestBid: '5.6',
-    startingPrice: '4.0',
-    status: 1,
-    endTime: Date.now() + 3600000 // 1小时后结束
-  },
-  {
-    auctionId: 'mock-a6',
-    artwork: { name: '赛博霓虹', imageUrl: 'https://images.unsplash.com/photo-1614728263952-84ea206f25bc?auto=format&fit=crop&q=80&w=1000' },
-    highestBid: '1.2',
-    startingPrice: '0.8',
-    status: 1,
-    endTime: Date.now() + 7200000 // 2小时后结束
-  },
-  {
-    auctionId: 'mock-a7',
-    artwork: { name: '意识流转', imageUrl: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&q=80&w=1000' },
-    highestBid: '0.5',
-    startingPrice: '0.3',
-    status: 1,
-    endTime: Date.now() + 10800000 // 3小时后结束
-  },
-  {
-    auctionId: 'mock-a8',
-    artwork: { name: '量子纠缠', imageUrl: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=1000' },
-    highestBid: '4.1',
-    startingPrice: '3.5',
-    status: 1,
-    endTime: Date.now() + 14400000 // 4小时后结束
-  }
-]
-
 const fetchHotAuctions = async () => {
   loading.value = true
   try {
     const res = await getHotAuctions()
-    hotAuctions.value = res.data?.length > 0 ? res.data : mockHotAuctions
+    hotAuctions.value = res.data?.length > 0 ? res.data : mockAuctions.slice(0, 4)
   } catch (error) {
     console.error('Failed to fetch hot auctions:', error)
-    hotAuctions.value = mockHotAuctions
+    hotAuctions.value = mockAuctions.slice(0, 4)
   } finally {
     loading.value = false
   }
@@ -251,10 +181,10 @@ const fetchEndingSoonAuctions = async () => {
   loadingEnding.value = true
   try {
     const res = await getEndingSoonAuctions()
-    endingSoonAuctions.value = res.data?.length > 0 ? res.data : mockEndingSoonAuctions
+    endingSoonAuctions.value = res.data?.length > 0 ? res.data : mockAuctions.slice(4, 8)
   } catch (error) {
     console.error('Failed to fetch ending soon auctions:', error)
-    endingSoonAuctions.value = mockEndingSoonAuctions
+    endingSoonAuctions.value = mockAuctions.slice(4, 8)
   } finally {
     loadingEnding.value = false
   }

@@ -66,6 +66,7 @@ import { Plus, Picture } from '@element-plus/icons-vue'
 import { getMyAuctions } from '@/api/auction'
 import { useUserStore } from '@/stores/user'
 import type { Auction } from '@/types'
+import { mockAuctions } from '@/utils/mockData'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -112,22 +113,13 @@ const fetchMyArtworks = async () => {
     if (res.data && res.data.length > 0) {
       artworks.value = res.data
     } else {
-      // 模拟数据回退：显示一两件归属于当前用户的作品
+      // 模拟数据回退：显示共享数据中的第一件作品作为自己的
+      const mock = mockAuctions[0]
       artworks.value = [
         {
+          ...mock,
           id: 1,
-          auctionId: 'mock-a1',
-          artwork: {
-            name: '未来之光',
-            imageUrl: 'https://images.unsplash.com/photo-1547826039-bfc35e0f1ea8',
-            creator: userStore.address,
-            tokenId: 1001
-          },
           sellerAddress: userStore.address,
-          startingPrice: '1.0',
-          highestBid: '1.5',
-          status: 1,
-          endTime: Date.now() + 86400000
         }
       ] as any
     }

@@ -213,9 +213,24 @@ contract Auction is ReentrancyGuard, AccessControl {
             timestamp: block.timestamp
         }));
 
+        // === 退款逻辑：如果之前有最高出价者，退还其资金 ===
+        address previousBidder = auction.highestBidder;
+        uint256 previousBid = auction.highestBid;
+
         // 更新最高出价
         auction.highestBid = bidAmount;
         auction.highestBidder = msg.sender;
+
+        // 执行退款 (放在状态更新之后，防止重入攻击)
+        if (previousBidder != address(0) && previousBid > 0) {
+            (bool success, ) = payable(previousBidder).call{value: previousBid}("");
+            // 注意：我们不 require(success)，以防止恶意合约拒绝接收 ETH 导致整个拍卖卡死
+            // 在实际生产中，更好的做法是使用 withdrawal 模式（让用户自己来提取），
+            // 但为了演示流畅，这里采用直接 push 模式并忽略失败。
+            if (success) {
+                // emit 退款事件（可选，如果您有定义相关事件）
+            }
+        }
 
         // 延长拍卖时间(如果出价在最后5分钟)
         if (auction.endTime - block.timestamp <= 5 minutes) {

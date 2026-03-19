@@ -55,7 +55,15 @@
         <el-col :xs="24" :md="12">
           <div class="auction-card">
             <div class="header-info">
-              <h1 class="title">{{ auction.artwork?.name }}</h1>
+              <div class="title-row">
+                <h1 class="title">{{ auction.artwork?.name }}</h1>
+                <el-tag v-if="battleState === 'success'" type="success" effect="dark" class="success-badge">
+                  竞拍成功
+                </el-tag>
+                <el-tag v-else-if="auction.highestBidder === userStore.address" type="success" class="highest-bidder-tag">
+                  最高出价
+                </el-tag>
+              </div>
               <div class="status-tags">
                 <el-tag :type="getStatusType(auction.status)" effect="dark">
                   {{ getStatusText(auction.status) }}
@@ -106,9 +114,13 @@
                 </div>
               </div>
 
-              <div class="timer-info" v-if="auction.status === 1">
-                <span class="label">拍卖截止</span>
-                <CountdownTimer :endTime="auction.endTime" @end="handleAuctionEnd" />
+              <div class="timer-info">
+                <span class="label">{{ battleState === 'success' || isCancelled ? '成交时间' : '拍卖截止' }}</span>
+                <div v-if="battleState === 'success' || isCancelled" class="settle-time-display">
+                  <el-icon><Clock /></el-icon>
+                  <span>{{ settleTime }}</span>
+                </div>
+                <CountdownTimer v-else :endTime="auction.endTime" @end="handleAuctionEnd" />
               </div>
             </div>
 
@@ -125,28 +137,45 @@
 
             <div class="action-section" v-if="auction.status === 1">
               <div class="bid-controls">
-                <div class="input-wrapper">
-                  <el-input-number
-                    v-model="bidAmount"
-                    :min="minBid"
-                    :step="Number(auction.minIncrement)"
-                    :precision="4"
-                    size="large"
-                    controls-position="right"
-                  />
-                  <span class="input-unit">ETH</span>
+                <div class="bid-input-group">
+                  <div class="input-wrapper">
+                    <el-input-number
+                      v-model="bidAmount"
+                      :min="minBid"
+                      :step="Number(auction.minIncrement)"
+                      :precision="4"
+                      size="large"
+                      controls-position="right"
+                      :disabled="isCancelled"
+                    />
+                    <span class="input-unit">ETH</span>
+                  </div>
+                  <p class="min-bid-hint">最低有效出价: <strong>{{ minBid }} ETH</strong></p>
                 </div>
-                <el-button
-                  type="primary"
-                  size="large"
-                  class="bid-btn premium-btn"
-                  :loading="bidding"
-                  @click="handleBid"
-                >
-                  立即竞拍
-                </el-button>
+                
+                <div class="action-buttons">
+                  <el-button
+                    :type="battleState === 'success' ? 'info' : 'primary'"
+                    size="large"
+                    class="bid-btn premium-btn"
+                    :loading="bidding"
+                    :disabled="isCancelled || battleState === 'success'"
+                    @click="handleBid"
+                  >
+                    {{ battleState === 'success' ? '禁止竞拍' : '立即竞拍' }}
+                  </el-button>
+                  <el-button
+                    type="danger"
+                    size="large"
+                    class="cancel-btn"
+                    plain
+                    :disabled="isCancelled || battleState === 'success'"
+                    @click="handleCancelBid"
+                  >
+                    取消竞拍
+                  </el-button>
+                </div>
               </div>
-              <p class="min-bid-hint">最低有效出价: <strong>{{ minBid }} ETH</strong></p>
             </div>
 
             <div class="seller-actions" v-if="canEndAuction">
@@ -177,11 +206,13 @@
               <div class="content-panel">
                 <el-table :data="bidHistory" style="width: 100%" class="history-table">
                   <el-table-column label="出价者" min-width="180">
-                    <template #default="{ row }">
+                    <template #default="{ row, $index }">
                       <div class="bidder-cell">
                         <el-avatar :size="24" icon="User" />
                         <span class="addr">{{ formatAddress(row.bidderAddress) }}</span>
-                        <el-tag v-if="row.bidderAddress === auction.highestBidder" size="small" type="success" effect="plain" class="winner-tag">最高</el-tag>
+                        <!-- 只有当取消且是第一名时才显示皇冠 -->
+                        <span v-if="(isCancelled || battleState === 'success') && $index === 0" class="crown-icon" title="当前赢家">👑</span>
+                        <el-tag v-else-if="row.bidderAddress === auction.highestBidder" size="small" type="success" effect="plain" class="winner-tag">最高</el-tag>
                       </div>
                     </template>
                   </el-table-column>
@@ -235,81 +266,27 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { 
   User, Wallet, Link, Lock, 
-  CircleCheckFilled, TopRight 
+  CircleCheckFilled, TopRight, Clock
 } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
 import { useUserStore } from '@/stores/user'
 import { placeBid, endAuction } from '@/utils/contracts'
 import { getAuctionById, getBidHistory } from '@/api/auction'
 import CountdownTimer from '@/components/CountdownTimer.vue'
+import { ethers } from 'ethers'
+import { mockAuctions } from '@/utils/mockData'
 
-// 1. 模拟数据映射表移至顶部，确保任何时候都可用
-const MOCK_DATA_MAP: Record<string, any> = {
-  'mock-a1': { 
-    name: '未来之光', 
-    img: 'https://images.unsplash.com/photo-1547826039-bfc35e0f1ea8', 
-    price: '1.5', 
-    desc: '这件作品是数字艺术的一次大胆尝试，通过复杂的算法重构了光影与空间的比例。',
-    creator: '0x71c7656ec7ab88b098defb751b7401b5f6d8976f',
-    seller: '0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc'
-  },
-  'mock-a2': { 
-    name: '深海共鸣', 
-    img: 'https://images.unsplash.com/photo-1541961017774-22349e4a1262', 
-    price: '2.8', 
-    desc: '探索深海最深处的宁now与力量，蓝色调的层叠展现了水的生命力。',
-    creator: '0x90f8bf6a479f320ead074411a4b0e7944ea8c9c1',
-    seller: '0x2546beee84594a58739265b82269e7a310237190'
-  },
-  'mock-a3': { 
-    name: '数字荒原', 
-    img: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5', 
-    price: '0.9', 
-    desc: '在荒凉的数字世界中寻找秩序，混乱与平衡的极致体现。',
-    creator: '0xfe629b7f6075cf9af684060854580f6cc44666da',
-    seller: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8'
-  },
-  'mock-a4': { 
-    name: '城市之巅', 
-    img: 'https://images.unsplash.com/photo-1514924013411-cbf25faa35bb', 
-    price: '3.2', 
-    desc: '俯瞰繁华都市的璀璨灯火，捕捉现代文明跳动的脉搏。',
-    creator: '0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc',
-    seller: '0x90f8bf6a479f320ead074411a4b0e7944ea8c9c1'
-  },
-  'mock-a5': { 
-    name: '最后的晚餐 - 重构', 
-    img: 'https://images.unsplash.com/photo-1554188248-986adbb73be4', 
-    price: '5.6', 
-    desc: '用现代抽象手法解构经典，赋予传统艺术全新的数字生命。',
-    creator: '0x15d34aaf54267db7d7c367839aaf71a00a2c6a65',
-    seller: '0x9965507d1a55bcc2695c58ba16fb37d819b0a4dc'
-  },
-  'mock-a6': { 
-    name: '赛博霓虹', 
-    img: 'https://images.unsplash.com/photo-1614728263952-84ea206f25bc', 
-    price: '1.2', 
-    desc: '霓虹闪烁的未来城市夜景，电子梦境与现实的交织。',
-    creator: '0x976ea74026e726554db657fa54763abd0c3a0aa9',
-    seller: '0x14dc79964da2c08b23698b3d3cc7ca32193d9955'
-  },
-  'mock-a7': { 
-    name: '意识流转', 
-    img: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb', 
-    price: '0.5', 
-    desc: '心灵深处思绪的无声流动，如水般自然，如风般变幻。',
-    creator: '0x23618e81e3f5cdf7f54c3d65f7fbc0abfb21e8f',
-    seller: '0xa0ee7a142d267c1f36714e4a8f75612f20a79720'
-  },
-  'mock-a8': { 
-    name: '量子纠缠', 
-    img: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa', 
-    price: '4.1', 
-    desc: '微观世界的奇妙连接，跨越空间的无形纽带。',
-    creator: '0xbcd4042de499d14e55001ccbb24a551f3b9d933f',
-    seller: '0x71c7656ec7ab88b098defb751b7401b5f6d8976f'
-  }
-}
+// ==========================================
+// 🤖 机器人配置 (Ganache 测试专用)
+// ==========================================
+const BOT_PRIVATE_KEYS = [
+  '0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a', // Account 1
+  '0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6', // Account 2
+  '0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a', // Account 3
+  '0x8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba', // Account 4
+  '0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d6ffb2bc538910'  // Account 5
+]
+const GANACHE_RPC = "http://127.0.0.1:7545"
 
 const route = useRoute()
 const userStore = useUserStore()
@@ -317,10 +294,183 @@ const userStore = useUserStore()
 const loading = ref(false)
 const bidding = ref(false)
 const ending = ref(false)
+const isCancelled = ref(false)
+const settleTime = ref('') // 定格时间
+const battleState = ref<'waiting' | 'active' | 'success' | 'cancelled'>('waiting')
+const isFirstLoad = ref(true)
+
 const auction = ref<any>(null)
 const bidHistory = ref<any[]>([])
 const bidAmount = ref(0)
 const activeTab = ref('desc')
+
+// 🤖 机器人执行真实出价 (用于开局抢跑或反击)
+const executeBotBid = async (auctionId: string | number, currentHighest: number) => {
+  const botIndex = Math.floor(Math.random() * BOT_PRIVATE_KEYS.length)
+  const botPrivateKey = BOT_PRIVATE_KEYS[botIndex]
+  
+  try {
+    const provider = new ethers.JsonRpcProvider(GANACHE_RPC)
+    const wallet = new ethers.Wallet(botPrivateKey, provider)
+    
+    const increment = Number(auction.value.minIncrement) || 0.1
+    const bidValue = (currentHighest + increment + (Math.random() * 0.05)).toFixed(4)
+    
+    // 如果是真实合约，执行合约调用；如果是 mock，执行转账以扣除余额
+    if (auctionId.toString().startsWith('mock-')) {
+      const previousBidder = auction.value.highestBidder
+      const previousAmount = auction.value.highestBid
+
+      const randomAddr = ethers.Wallet.createRandom().address
+      const tx = await wallet.sendTransaction({
+        to: randomAddr,
+        value: ethers.parseEther(bidValue)
+      })
+      await tx.wait()
+
+      // 💡 模拟退款逻辑 (仅针对 Mock 数据)
+      // 如果前一个出价者是当前登录用户，把钱“退回”给用户
+      if (previousBidder?.toLowerCase() === userStore.address.toLowerCase()) {
+        console.log(`💰 [Mock Refund] 退还用户 ${previousAmount} ETH`)
+        const currentBal = parseFloat(userStore.balance)
+        userStore.setBalance((currentBal + parseFloat(previousAmount)).toFixed(4))
+        ElMessage.info(`由于被反超，您的出价 ${previousAmount} ETH 已退回到钱包`)
+      }
+
+      // 更新本地 UI 状态 (Mock)
+      const newBid = {
+        bidderAddress: wallet.address,
+        amount: bidValue,
+        createdAt: Date.now(),
+        txHash: tx.hash
+      }
+      // 使用新数组引用确保 Vue 响应式触发
+      bidHistory.value = [newBid, ...bidHistory.value]
+      auction.value.highestBid = bidValue
+      auction.value.highestBidder = wallet.address
+      
+      // 同步更新输入框的最小出价
+      bidAmount.value = Number(bidValue) + (Number(auction.value.minIncrement) || 0.1)
+      
+      return { success: true, bidValue, bidder: wallet.address }
+    } else {
+      const auctionContract = new ethers.Contract(
+        import.meta.env.VITE_AUCTION_CONTRACT_ADDRESS,
+        ["function placeBid(uint256 auctionId) external payable"],
+        wallet
+      )
+      const tx = await auctionContract.placeBid(Number(auctionId), { 
+        value: ethers.parseEther(bidValue) 
+      })
+      await tx.wait()
+      return { success: true, bidValue, bidder: wallet.address }
+    }
+  } catch (e) {
+    console.error("机器人出价失败:", e)
+    return { success: false }
+  }
+}
+
+// 🎮 机器人“反击”逻辑：20% 概率在 3 秒内加价
+const triggerSimulationBotRevenge = async () => {
+  if (isCancelled.value || battleState.value === 'success') return
+
+  console.log("🤖 机器人正在评估是否在 3 秒内反击...")
+  
+  // 3秒总计时开始
+  const BATTLE_DURATION = 3000
+  let isOutbid = false
+
+  // 20% 概率反击
+  if (Math.random() < 0.2) {
+    // 在 0.5 到 2.5 秒之间随机一个反击点
+    const revengeDelay = Math.floor(Math.random() * 2000) + 500
+    
+    setTimeout(async () => {
+      if (isCancelled.value || battleState.value === 'success') return
+      
+      isOutbid = true
+      const currentPrice = Number(auction.value.highestBid)
+      console.log("🚀 机器人抢在 3 秒内发起反击！")
+      const result = await executeBotBid(auction.value.auctionId, currentPrice)
+      
+      if (result.success) {
+        ElMessage({
+          message: `哎呀！有人超过了您的出价！出价人 ${formatAddress(result.bidder)} 目前最高价为 ${result.bidValue} ETH`,
+          type: 'warning',
+          duration: 5000,
+          showClose: true
+        })
+      }
+    }, revengeDelay)
+  }
+
+  // 3 秒后检查结果
+  setTimeout(() => {
+    if (!isOutbid && !isCancelled.value && battleState.value !== 'success') {
+      // 检查当前最高出价者是否还是用户
+      if (auction.value.highestBidder?.toLowerCase() === userStore.address.toLowerCase()) {
+        console.log("🎉 3 秒内无人加价，用户获胜！")
+        battleState.value = 'success'
+        isCancelled.value = true // 锁定 UI
+        const winTime = dayjs().format('YYYY/MM/DD HH:mm:ss')
+        settleTime.value = winTime
+        
+        // 持久化存储到本地，确保刷新后依然是获胜状态
+        const mockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
+        mockBids[auction.value.auctionId] = {
+          id: auction.value.auctionId,
+          title: auction.value.artwork?.name,
+          imageUrl: auction.value.artwork?.imageUrl,
+          currentPrice: auction.value.highestBid,
+          myPrice: auction.value.highestBid,
+          endTime: winTime,
+          bidStatus: 'won'
+        }
+        localStorage.setItem('MOCK_USER_BIDS', JSON.stringify(mockBids))
+
+        // 弹出竞拍结果弹框
+        ElMessageBox.alert(
+          `恭喜！您以 ${auction.value.highestBid} ETH 的价格成功赢得了作品《${auction.value.artwork?.name}》！`,
+          '竞拍结果',
+          {
+            confirmButtonText: '太棒了',
+            type: 'success',
+            callback: () => {
+              // 可以在这里做一些额外的跳转或状态更新
+            }
+          }
+        )
+      }
+    }
+  }, BATTLE_DURATION)
+}
+
+// 🎮 开局初始化：3秒静默抢跑
+const simulateInitialBots = async () => {
+  if (!isFirstLoad.value) return
+  isFirstLoad.value = false
+
+  // 3秒静默倒计时
+  await new Promise(resolve => setTimeout(resolve, 3000))
+
+  // 随机 0-5 个机器人抢跑
+  const botCount = Math.floor(Math.random() * 6)
+  if (botCount > 0 && auction.value && !isCancelled.value) {
+    let currentPrice = Number(auction.value.highestBid) || Number(auction.value.startingPrice)
+    
+    for (let i = 0; i < botCount; i++) {
+      await executeBotBid(auction.value.auctionId, currentPrice)
+      const increment = Number(auction.value.minIncrement) || 0.1
+      currentPrice += increment
+    }
+    // 如果是真实合约，刷新列表；如果是 mock，已经在 executeBotBid 更新了
+    if (!auction.value.auctionId.toString().startsWith('mock-')) {
+      await fetchAuctionDetail()
+    }
+  }
+  battleState.value = 'active'
+}
 
 const minBid = computed(() => {
   if (!auction.value) return 0
@@ -391,63 +541,64 @@ const fetchAuctionDetail = async () => {
   
   const id = String(idParam).trim()
   
-  // 兼容性处理：如果 ID 是 'mock1' 这种格式，自动转为 'mock-a1'
-  const normalizedId = id.startsWith('mock') && !id.includes('-a') 
-    ? id.replace('mock', 'mock-a') 
-    : id
-    
-  console.log('[Debug] Fetching Detail for ID:', normalizedId)
-  
-  // 检查是否为模拟数据 ID
-  const isMock = normalizedId.startsWith('mock-') || isNaN(Number(normalizedId))
+  // 💡 修复逻辑：处理模拟数据 ID (如 mock-a1)
+  const isMock = id.startsWith('mock-') || isNaN(Number(id))
 
   if (isMock) {
-    const data = MOCK_DATA_MAP[normalizedId]
-    if (!data) {
-      console.warn(`[Warning] Mock ID "${normalizedId}" not found, falling back to mock-a1`)
-    }
-    const targetData = data || MOCK_DATA_MAP['mock-a1']
-    const currentUser = userStore.address || '0x29193796d84135' // 优先使用已连接地址
-
-    console.log('[Debug] Mapping to artwork:', targetData.name)
-
-    auction.value = {
-      id: normalizedId,
-      auctionId: normalizedId,
-      artwork: {
-        name: targetData.name,
-        imageUrl: targetData.img,
-        description: targetData.desc,
-        creator: normalizedId === 'mock-a1' ? currentUser : (targetData.creator || '0x71C7656EC7ab88b098defB751B7401B5f6d8976F'),
-        tokenId: 1000 + (Object.keys(MOCK_DATA_MAP).indexOf(normalizedId) + 1 || 1),
-        isVerified: true,
-        createdAt: Date.now() - 86400000 * 3
-      },
-      sellerAddress: normalizedId === 'mock-a1' ? currentUser : (targetData.seller || '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC'),
-      startingPrice: (Number(targetData.price) * 0.6).toFixed(1),
-      highestBid: targetData.price,
-      minIncrement: '0.1',
-      status: 1,
-      endTime: Date.now() + 86400000,
-      txHash: '0x9560f64c636f3c9e99a7a972174c35e58989506691c7f55c3c3a0937a069a538'
-    }
+    // 从共享模拟数据中查找
+    const foundMock = mockAuctions.find(m => m.auctionId === id)
     
-    bidHistory.value = [
-      {
-        bidderAddress: '0x90F8bf6A479f320ead074411a4B0e7944Ea8c9C1',
-        amount: targetData.price,
-        createdAt: Date.now() - 3600000,
-        txHash: '0x123...abc'
-      },
-      {
-        bidderAddress: '0x2546BEee84594A58739265B82269E7A310237190',
-        amount: (Number(targetData.price) * 0.8).toFixed(1),
-        createdAt: Date.now() - 7200000,
-        txHash: '0x456...def'
+    // 检查本地存储，看是否已经获胜
+    const localMockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
+    const savedBid = localMockBids[id]
+
+    if (foundMock) {
+      auction.value = JSON.parse(JSON.stringify(foundMock)) // 深拷贝防止修改原数据
+      // 如果本地存过且状态是 won，直接恢复状态
+      if (savedBid && savedBid.bidStatus === 'won') {
+        auction.value.highestBid = savedBid.currentPrice
+        auction.value.highestBidder = userStore.address
+        battleState.value = 'success'
+        isCancelled.value = true
+        settleTime.value = savedBid.endTime // 使用保存的时间
       }
-    ]
+    } else {
+      // 如果没找到（可能是手动输入的 ID），显示默认 mock
+      auction.value = {
+        auctionId: id,
+        artwork: {
+          name: '模拟艺术品',
+          imageUrl: 'https://images.unsplash.com/photo-1547826039-bfc35e0f1ea8',
+          description: '这是一个通用的模拟作品详情。',
+          creator: '0x71C7656EC7ab88b098defB751B7401B5f6d8976F'
+        },
+        startingPrice: '1.0',
+        highestBid: '1.5',
+        minIncrement: '0.1',
+        status: 1,
+        endTime: Date.now() + 86400000
+      }
+    }
     
-    bidAmount.value = Number(auction.value.highestBid) + 0.1
+    // 构造出价历史
+    if (savedBid && savedBid.bidStatus === 'won') {
+      bidHistory.value = [
+        { bidderAddress: userStore.address, amount: savedBid.myPrice, createdAt: Date.now() - 60000 },
+        { bidderAddress: '0x90F8bf6A479f320ead074411a4B0e7944Ea8c9C1', amount: foundMock?.startingPrice || '1.0', createdAt: Date.now() - 3600000 }
+      ]
+    } else {
+      bidHistory.value = [
+        { bidderAddress: '0x90F8bf6A479f320ead074411a4B0e7944Ea8c9C1', amount: auction.value.highestBid, createdAt: Date.now() - 3600000 }
+      ]
+    }
+
+    bidAmount.value = Number(auction.value.highestBid) + Number(auction.value.minIncrement)
+    loading.value = false
+    
+    // 初始化时执行开局机器人抢跑 (仅针对未获胜的模拟数据执行)
+    if (battleState.value === 'waiting') {
+      simulateInitialBots()
+    }
     return
   }
 
@@ -460,12 +611,38 @@ const fetchAuctionDetail = async () => {
     bidHistory.value = historyRes.data || []
     
     bidAmount.value = minBid.value
+
+    // 初始化时执行开局机器人抢跑
+    if (battleState.value === 'waiting') {
+      simulateInitialBots()
+    }
   } catch (error) {
     console.error('Failed to fetch auction:', error)
     ElMessage.error('获取拍卖详情失败')
   } finally {
     loading.value = false
   }
+}
+
+const handleCancelBid = () => {
+  ElMessageBox.confirm('确认放弃本次竞拍？放弃后将无法再出价。', '放弃确认', {
+    confirmButtonText: '确认放弃',
+    cancelButtonText: '暂不放弃',
+    type: 'warning'
+  }).then(() => {
+    isCancelled.value = true
+    // 时间定格在当前时间
+    settleTime.value = dayjs().format('YYYY/MM/DD HH:mm:ss')
+    
+    const highestBidder = bidHistory.value[0]?.bidderAddress
+    if (highestBidder?.toLowerCase() === userStore.address.toLowerCase()) {
+      battleState.value = 'success'
+      ElMessage.success('恭喜！您成功赢得了本次竞拍！')
+    } else {
+      battleState.value = 'cancelled'
+      ElMessage.info(`您已放弃竞拍。最终赢家是 ${formatAddress(highestBidder)}。`)
+    }
+  }).catch(() => {})
 }
 
 const handleBid = async () => {
@@ -492,62 +669,61 @@ const handleBid = async () => {
 
     bidding.value = true
     
-    // 针对模拟数据，执行真实的链上转账交易
+    // 💡 修复逻辑：处理模拟数据出价
     if (auction.value.auctionId.toString().startsWith('mock-')) {
-      const { ethers } = await import('ethers')
       const provider = new ethers.BrowserProvider(window.ethereum)
       const signer = await provider.getSigner()
       
-      // 构造一个真实的以太币转账交易
-      // 转账给当前作品的持有者（模拟竞拍支付到合约/卖家）
+      // 为了让 Ganache 余额真的减少，我们发起一个真实的转账交易
+      // 转给一个随机生成的地址，模拟“竞拍支出”
+      const randomAddr = ethers.Wallet.createRandom().address
       const tx = await signer.sendTransaction({
-        to: auction.value.sellerAddress || '0x0000000000000000000000000000000000000000',
+        to: randomAddr,
         value: ethers.parseEther(bidAmount.value.toString())
       })
       
-      ElMessage.info('交易已提交到区块链，等待确认...')
-      const receipt = await tx.wait()
+      ElMessage.info('正在处理模拟竞拍交易...')
+      await tx.wait()
       
-      // 交易成功后的逻辑
-      const mockTxHash = receipt?.hash || tx.hash
-      
+      // 更新本地 UI 状态
       const newBid = {
         bidderAddress: userStore.address,
         amount: bidAmount.value.toString(),
         createdAt: Date.now(),
-        txHash: mockTxHash
+        txHash: tx.hash
       }
-      
-      bidHistory.value.unshift(newBid)
+      bidHistory.value = [newBid, ...bidHistory.value]
       auction.value.highestBid = bidAmount.value.toString()
-      
-      // 保存模拟竞拍记录到本地存储
+      auction.value.highestBidder = userStore.address
+
+      // 持久化到“我的竞拍”列表，标记为正在参与
       const mockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
       mockBids[auction.value.auctionId] = {
         id: auction.value.auctionId,
-        title: auction.value.artwork?.name || '未知作品',
-        imageUrl: auction.value.artwork?.imageUrl || '', 
-        currentPrice: bidAmount.value.toString(),
-        myPrice: bidAmount.value.toString(),
-        endTime: auction.value.endTime,
-        bidStatus: 'won', // 既然已经给卖家转账了，直接标记为竞拍成功
-        txHash: mockTxHash
+        title: auction.value.artwork?.name,
+        imageUrl: auction.value.artwork?.imageUrl,
+        currentPrice: auction.value.highestBid,
+        myPrice: auction.value.highestBid,
+        endTime: new Date(auction.value.endTime).toISOString(),
+        bidStatus: 'active'
       }
       localStorage.setItem('MOCK_USER_BIDS', JSON.stringify(mockBids))
       
-      // 更新当前页面显示的状态
-      auction.value.status = 4 // 标记为已结算/已完成
-      auction.value.highestBidder = userStore.address
-      
-      // 刷新余额（从链上获取最新余额）
+      // 刷新余额
       await userStore.refreshBalance()
-      
-      ElMessage.success(`竞拍成功！交易哈希: ${mockTxHash.slice(0, 10)}...`)
-      bidAmount.value = minBid.value
+      ElMessage.success('模拟出价成功！您的 Ganache 余额已扣除。')
+
+      // 🎮 触发机器人反击评估
+      triggerSimulationBotRevenge()
     } else {
+      // 真实合约出价
       await placeBid(auction.value.auctionId, bidAmount.value.toString())
-      ElMessage.success('出价指令已发送，请等待区块确认')
-      setTimeout(fetchAuctionDetail, 5000)
+      ElMessage.success('出价成功！交易已上链，正在等待区块确认...')
+      
+      // 🎮 即使是真实合约，也可以在本地前端模拟机器人的“心理反应”
+      // 只要机器人服务 (bot-service.ts) 在后台运行，它就会通过监听事件来反击
+      // 这里我们可以不需要手动调用，但为了演示流畅性，我们可以主动提示
+      setTimeout(fetchAuctionDetail, 3000)
     }
   } catch (error: any) {
     if (error !== 'cancel') {
@@ -614,8 +790,23 @@ const handleEndAuction = async () => {
 }
 
 const handleAuctionEnd = () => {
+  if (battleState.value === 'success' || isCancelled.value) return
+
   ElMessage.info('拍卖已到达截止时间')
-  fetchAuctionDetail()
+  fetchAuctionDetail().then(() => {
+    // 检查是否是赢家
+    const highestBidder = bidHistory.value[0]?.bidderAddress
+    if (highestBidder?.toLowerCase() === userStore.address.toLowerCase()) {
+      battleState.value = 'success'
+      isCancelled.value = true // 同样用于锁定 UI
+      settleTime.value = dayjs().format('YYYY/MM/DD HH:mm:ss')
+      ElMessage.success('恭喜！您在最后一刻成功赢得了本次竞拍！')
+    } else {
+      battleState.value = 'cancelled'
+      isCancelled.value = true
+      settleTime.value = dayjs().format('YYYY/MM/DD HH:mm:ss')
+    }
+  })
 }
 
 onMounted(() => {
@@ -718,13 +909,30 @@ watch(() => route.params.id, (newId) => {
 
     .header-info {
       margin-bottom: 25px;
-      .title {
-        font-size: 36px;
-        font-weight: 800;
-        color: #1a1a2e;
+
+      .title-row {
+        display: flex;
+        align-items: center;
+        gap: 15px;
         margin-bottom: 12px;
-        line-height: 1.2;
+
+        .title {
+          font-size: 36px;
+          font-weight: 800;
+          color: #1a1a2e;
+          margin: 0;
+          line-height: 1.2;
+        }
+
+        .success-badge {
+          font-size: 16px;
+          padding: 8px 15px;
+          border-radius: 8px;
+          background-color: #67c23a;
+          border: none;
+        }
       }
+
       .status-tags {
         display: flex;
         gap: 10px;
@@ -817,6 +1025,17 @@ watch(() => route.params.id, (newId) => {
           color: rgba(255,255,255,0.6);
           display: block;
           margin-bottom: 12px;
+          min-width: 60px;
+        }
+
+        .settle-time-display {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 18px;
+          color: #fff;
+          font-family: monospace;
+          justify-content: flex-end;
         }
       }
     }
@@ -850,49 +1069,66 @@ watch(() => route.params.id, (newId) => {
 
       .bid-controls {
         display: flex;
-        gap: 15px;
-        margin-bottom: 15px;
+        align-items: flex-start;
+        gap: 20px;
 
-        .input-wrapper {
-          position: relative;
+        .bid-input-group {
           flex: 1;
-          .input-unit {
-            position: absolute;
-            right: 40px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: #999;
-            font-weight: 600;
-            z-index: 10;
-            pointer-events: none;
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+
+          .input-wrapper {
+            position: relative;
+            .input-unit {
+              position: absolute;
+              right: 40px;
+              top: 50%;
+              transform: translateY(-50%);
+              color: #999;
+              font-weight: 600;
+              z-index: 10;
+              pointer-events: none;
+            }
+            :deep(.el-input-number) {
+              width: 100%;
+              height: 56px;
+              .el-input__inner {
+                height: 56px;
+                line-height: 56px;
+                text-align: left;
+                padding-left: 20px;
+                font-weight: 700;
+                font-size: 24px;
+              }
+            }
           }
-          :deep(.el-input-number) {
-            width: 100%;
-            .el-input__inner {
-              text-align: left;
-              padding-left: 20px;
-              font-weight: 700;
-              font-size: 18px;
+
+          .min-bid-hint {
+            font-size: 13px;
+            color: #666;
+            margin: 0;
+            padding-left: 4px;
+            strong {
+              color: #1a1a2e;
             }
           }
         }
 
-        .bid-btn {
-          height: 50px;
-          padding: 0 40px;
-          font-size: 16px;
-          font-weight: 700;
-          border-radius: 12px;
-        }
-      }
+        .action-buttons {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          width: 160px;
 
-      .min-bid-hint {
-        font-size: 13px;
-        color: #666;
-        text-align: center;
-        margin: 0;
-        strong {
-          color: #1a1a2e;
+          .bid-btn, .cancel-btn {
+            width: 100%;
+            height: 48px;
+            margin: 0;
+            font-size: 16px;
+            font-weight: 700;
+            border-radius: 12px;
+          }
         }
       }
     }
@@ -943,6 +1179,10 @@ watch(() => route.params.id, (newId) => {
         }
         .winner-tag {
           font-size: 10px;
+        }
+        .crown-icon {
+          font-size: 20px;
+          line-height: 1;
         }
       }
 
