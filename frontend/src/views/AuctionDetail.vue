@@ -58,11 +58,14 @@
             <div class="header-info">
               <div class="title-row">
                 <h1 class="title">{{ auction.artwork?.name }}</h1>
-                <el-tag v-if="battleState === 'success'" type="success" effect="dark" class="success-badge">
+                <el-tag v-if="battleState === 'success' || (auction.status === 4 && auction.highestBidder === userStore.address)" type="success" effect="dark" class="success-badge">
                   竞拍成功
                 </el-tag>
                 <el-tag v-else-if="auction.highestBidder === userStore.address" type="success" class="highest-bidder-tag">
                   最高出价者
+                </el-tag>
+                <el-tag v-else-if="auction.status === 4 && auction.highestBidder" type="info" effect="dark" class="success-badge">
+                  已成交
                 </el-tag>
               </div>
               <div class="status-tags">
@@ -89,86 +92,112 @@
               </div>
             </div>
 
-            <div class="price-display-card">
-              <div class="bid-info">
-                <span class="label">{{ auction.status === 1 ? '当前最高出价' : '起拍价格' }}</span>
-                <div class="price-value">
-                  <span class="amount">{{ formatPrice(auction.highestBid || auction.startingPrice) }}</span>
-                  <span class="unit">ETH</span>
-                </div>
-                <div class="reserve-status" v-if="auction.reservePrice > 0">
-                  <el-tooltip :content="'保留价: ' + formatPrice(auction.reservePrice) + ' ETH'" placement="top">
-                    <span class="reserve-label">
-                      <el-icon><Lock /></el-icon>
-                      {{ Number(auction.highestBid) >= Number(auction.reservePrice) ? '已达保留价' : '未达保留价' }}
-                    </span>
-                  </el-tooltip>
+            <!-- 归属显示 (如果用户已拍得作品) -->
+            <div v-if="isMine" class="owned-info-card">
+              <div class="owned-header">
+                <el-icon :size="48" class="check-icon"><CircleCheckFilled /></el-icon>
+                <div class="owned-text">
+                  <h3>恭喜！您已拥有该艺术品</h3>
+                  <p>成交于 {{ settleTime || formatTime(auction.endTime) }}</p>
                 </div>
               </div>
-
-              <div class="timer-info">
-                <span class="label">{{ battleState === 'success' || isCancelled ? '结算时间' : '距离结束' }}</span>
-                <div v-if="battleState === 'success' || isCancelled" class="settle-time-display">
-                  <el-icon><Clock /></el-icon>
-                  <span>{{ settleTime }}</span>
+              <div class="owned-details">
+                <div class="detail-item">
+                  <span class="label">获得价格</span>
+                  <span class="value">{{ formatPrice(auction.highestBid) }} ETH</span>
                 </div>
-                <CountdownTimer v-else :endTime="auction.endTime" @end="handleAuctionEnd" />
+                <div class="detail-item">
+                  <span class="label">当前所有者</span>
+                  <span class="value">您 ({{ formatAddress(userStore.address) }})</span>
+                </div>
               </div>
+              <el-button type="primary" size="large" class="manage-btn" @click="$router.push('/profile')">
+                在个人资料中查看
+              </el-button>
             </div>
 
-            <div class="auction-specs">
-              <div class="spec-item">
-                <span class="label">起拍价</span>
-                <span class="value">{{ formatPrice(auction.startingPrice) }} ETH</span>
-              </div>
-              <div class="spec-item">
-                <span class="label">最低加价</span>
-                <span class="value">{{ formatPrice(auction.minIncrement) }} ETH</span>
-              </div>
-            </div>
-
-            <div class="action-section" v-if="auction.status === 1">
-              <div class="bid-controls">
-                <div class="bid-input-group">
-                  <div class="input-wrapper">
-                    <el-input-number
-                      v-model="bidAmount"
-                      :min="minBid"
-                      :step="Number(auction.minIncrement)"
-                      :precision="4"
-                      size="large"
-                      controls-position="right"
-                      :disabled="isCancelled"
-                    />
-                    <span class="input-unit">ETH</span>
+            <template v-else>
+              <div class="price-display-card">
+                <div class="bid-info">
+                  <span class="label">{{ auction.status === 1 ? '当前最高出价' : '起拍价格' }}</span>
+                  <div class="price-value">
+                    <span class="amount">{{ formatPrice(auction.highestBid || auction.startingPrice) }}</span>
+                    <span class="unit">ETH</span>
                   </div>
-                  <p class="min-bid-hint">最低出价: <strong>{{ formatPrice(minBid) }} ETH</strong></p>
+                  <div class="reserve-status" v-if="auction.reservePrice > 0">
+                    <el-tooltip :content="'保留价: ' + formatPrice(auction.reservePrice) + ' ETH'" placement="top">
+                      <span class="reserve-label">
+                        <el-icon><Lock /></el-icon>
+                        {{ Number(auction.highestBid) >= Number(auction.reservePrice) ? '已达保留价' : '未达保留价' }}
+                      </span>
+                    </el-tooltip>
+                  </div>
                 </div>
 
-                <div class="action-buttons">
-                  <el-button
-                    :type="battleState === 'success' ? 'info' : 'primary'"
-                    size="large"
-                    class="bid-btn premium-btn"
-                    :loading="bidding"
-                    :disabled="isCancelled || battleState !== 'active'"
-                    @click="handleBid"
-                  >
-                    {{ battleState === 'success' ? '已成交' : '参与竞拍' }}
-                  </el-button>
-                  <el-button
-                    type="danger"
-                    size="large"
-                    class="cancel-btn"
-                    plain
-                    :disabled="isCancelled || battleState === 'success'"
-                    @click="handleCancelBid"
-                  >
-                    退出竞拍
-                  </el-button>
+                <div class="timer-info">
+                  <span class="label">{{ (battleState === 'success' || isCancelled || auction.status === 4) ? '结算时间' : '距离结束' }}</span>
+                  <div v-if="battleState === 'success' || isCancelled || auction.status === 4" class="settle-time-display">
+                    <el-icon><Clock /></el-icon>
+                    <span>{{ settleTime || formatTime(auction.endTime) }}</span>
+                  </div>
+                  <CountdownTimer v-else :endTime="auction.endTime" @end="handleAuctionEnd" />
                 </div>
               </div>
-            </div>
+
+              <div class="auction-specs">
+                <div class="spec-item">
+                  <span class="label">起拍价</span>
+                  <span class="value">{{ formatPrice(auction.startingPrice) }} ETH</span>
+                </div>
+                <div class="spec-item">
+                  <span class="label">最低加价</span>
+                  <span class="value">{{ formatPrice(auction.minIncrement) }} ETH</span>
+                </div>
+              </div>
+
+              <div class="action-section" v-if="auction.status === 1 && battleState !== 'success' && !isCancelled">
+                <div class="bid-controls">
+                  <div class="bid-input-group">
+                    <div class="input-wrapper">
+                      <el-input-number
+                        v-model="bidAmount"
+                        :min="minBid"
+                        :step="Number(auction.minIncrement)"
+                        :precision="4"
+                        size="large"
+                        controls-position="right"
+                        :disabled="isCancelled"
+                      />
+                      <span class="input-unit">ETH</span>
+                    </div>
+                    <p class="min-bid-hint">最低出价: <strong>{{ formatPrice(minBid) }} ETH</strong></p>
+                  </div>
+
+                  <div class="action-buttons">
+                    <el-button
+                      :type="battleState === 'success' ? 'info' : 'primary'"
+                      size="large"
+                      class="bid-btn premium-btn"
+                      :loading="bidding"
+                      :disabled="isCancelled || battleState !== 'active'"
+                      @click="handleBid"
+                    >
+                      {{ battleState === 'success' ? '已成交' : '参与竞拍' }}
+                    </el-button>
+                    <el-button
+                      type="danger"
+                      size="large"
+                      class="cancel-btn"
+                      plain
+                      :disabled="isCancelled || battleState === 'success'"
+                      @click="handleCancelBid"
+                    >
+                      退出竞拍
+                    </el-button>
+                  </div>
+                </div>
+              </div>
+            </template>
 
             <div class="seller-actions" v-if="canEndAuction">
               <el-button
@@ -268,6 +297,8 @@ import CountdownTimer from '@/components/CountdownTimer.vue'
 import { mockAuctions } from '@/utils/mockData'
 import { formatPrice } from '@/utils/format'
 
+import type { Auction, Bid } from '@/types'
+
 // ==========================================
 // 状态变量
 // ==========================================
@@ -283,7 +314,7 @@ const battleState = ref<'waiting' | 'active' | 'success' | 'cancelled'>('waiting
 const isFirstLoad = ref(true)
 const pendingBotTimer = ref<any>(null)
 
-const auction = ref<any>(null)
+const auction = ref<Auction | null>(null)
 const bidHistory = ref<any[]>([])
 const bidAmount = ref(0)
 const activeTab = ref('desc')
@@ -363,49 +394,54 @@ const finalizeBidResult = async (isWinner: boolean) => {
     const winAmount = Number(myBid?.amount)
     const sellerAddress = auction.value.sellerAddress || auction.value.artwork?.creator
 
-    if (sellerAddress && userStore.isConnected) {
+    // 立即更新状态为已完成（下架）
+    const nowStr = dayjs().format('YYYY-MM-DD HH:mm:ss')
+    auction.value.status = 4
+    auction.value.endTime = nowStr
+    battleState.value = 'success'
+    isCancelled.value = true
+    settleTime.value = nowStr
+
+    if (sellerAddress && sellerAddress !== '0x...' && userStore.isConnected) {
       try {
-        ElMessage.info('请在 MetaMask 中确认支付...')
+        ElMessage.info('正在发起支付确认...')
         const { ethers } = await import('ethers')
         const provider = new ethers.BrowserProvider(window.ethereum)
         const signer = await provider.getSigner()
+
+        // 校验目标地址是否合法，防止 Ethers v6 触发 ENS 解析错误
+        if (!ethers.isAddress(sellerAddress)) {
+          console.warn('无效的卖家地址，跳过链上支付环节:', sellerAddress)
+          throw new Error('invalid address')
+        }
 
         const tx = await signer.sendTransaction({
           to: sellerAddress,
           value: ethers.parseEther(winAmount.toString())
         })
 
-        ElMessage.info('正在同步链上数据...')
+        ElMessage.info('交易已发送，正在同步状态...')
         await tx.wait()
 
         const newBalance = (parseFloat(userStore.balance) - winAmount).toFixed(4)
         userStore.setBalance(newBalance < '0' ? '0' : newBalance)
 
-        battleState.value = 'success'
-        isCancelled.value = true
-        settleTime.value = dayjs().format('YYYY-MM-DD HH:mm:ss')
         ElMessageBox.alert(
-          `恭喜！您以 ${formatPrice(myBid?.amount)} ETH 的价格拍得 ${auction.value.artwork?.name}！\n\n支付的 ${formatPrice(myBid?.amount)} ETH 交易哈希为: ${tx.hash.slice(0, 10)}...`,
-          '交易成功',
+          `恭喜！当前无人竞争，您已直接拍得作品《${auction.value.artwork?.name}》！\n\n作品已成功归属于您并从拍卖行下架。\n支付金额: ${formatPrice(myBid?.amount)} ETH\n交易哈希: ${tx.hash.slice(0, 10)}...`,
+          '竞拍成功并已成交',
           { confirmButtonText: '确定', type: 'success' }
         )
       } catch (error: any) {
         console.error('支付失败:', error)
-        battleState.value = 'success'
-        isCancelled.value = true
-        settleTime.value = dayjs().format('YYYY-MM-DD HH:mm:ss')
         ElMessageBox.alert(
-          `恭喜！您以 ${formatPrice(myBid?.amount)} ETH 的价格拍得 ${auction.value.artwork?.name}！\n\n已成功扣款，正在等待链上确认。`,
-          '竞拍成功',
+          `恭喜！当前无人竞争，您已成功锁定作品《${auction.value.artwork?.name}》！\n\n由于支付被取消，作品已为您保留，请稍后在“我的竞拍”中完成结算。\n作品当前已从市场下架。`,
+          '竞拍锁定',
           { confirmButtonText: '确定', type: 'success' }
         )
       }
     } else {
-      battleState.value = 'success'
-      isCancelled.value = true
-      settleTime.value = dayjs().format('YYYY-MM-DD HH:mm:ss')
       ElMessageBox.alert(
-        `恭喜！您以 ${formatPrice(myBid?.amount)} ETH 的价格拍得 ${auction.value.artwork?.name}！`,
+        `恭喜！当前无人竞争，您已直接拍得作品《${auction.value.artwork?.name}》！\n\n该作品已下架并归属于您的名下。`,
         '竞拍成功',
         { confirmButtonText: '确定', type: 'success' }
       )
@@ -432,7 +468,7 @@ const handleBid = async () => {
 
   try {
     await ElMessageBox.confirm(
-      `您确定要出价 ${formatPrice(bidAmount.value)} ETH 吗？`, '出价确认',
+      `您确定要出价 ${formatPrice(bidAmount.value)} ETH 吗？如果没有竞争者，您将直接成交该作品。`, '确认出价',
       { confirmButtonText: '确定', cancelButtonText: '取消', type: 'info' }
     )
   } catch { return }
@@ -448,13 +484,15 @@ const handleBid = async () => {
   bidHistory.value = [userBid, ...bidHistory.value]
   auction.value.highestBid = bidAmount.value.toString()
   auction.value.highestBidder = userStore.address
-  ElMessage.success('出价请求已发送...')
+  ElMessage.success('出价已提交，正在确认竞争状态...')
 
   if (pendingBotTimer.value) clearTimeout(pendingBotTimer.value)
 
-  // 20% 概率在 0.5~2.5 秒内被机器人超过
+  let botOutbid = false
+  // 20% 概率在 0.5~1.5 秒内被机器人超过
   if (Math.random() < 0.2) {
-    const delay = Math.floor(Math.random() * 2000) + 500
+    const delay = Math.floor(Math.random() * 1000) + 500
+    botOutbid = true
     pendingBotTimer.value = setTimeout(() => {
       if (isCancelled.value || battleState.value !== 'active') return
       const inc = Number(auction.value.minIncrement) || 0.1
@@ -464,15 +502,26 @@ const handleBid = async () => {
       auction.value.highestBidder = botBid.bidderAddress
       bidAmount.value = parseFloat((botBid.amount + inc).toFixed(4))
       ElMessage.warning(`${botBid.bidderName} 刚刚出价 ${formatPrice(botBid.amount)} ETH，已超过您的价格`)
+      
+      // 如果被机器人超过了，再等一会儿结算（或者继续竞拍）
+      setTimeout(async () => {
+        if (isCancelled.value) return
+        const isWinner = auction.value.highestBidder?.toLowerCase() === userStore.address?.toLowerCase()
+        await finalizeBidResult(isWinner)
+      }, 2000)
     }, delay)
   }
 
-  // 3 秒后结算
-  setTimeout(async () => {
-    if (isCancelled.value) return
-    const isWinner = auction.value.highestBidder?.toLowerCase() === userStore.address?.toLowerCase()
-    await finalizeBidResult(isWinner)
-  }, 3000)
+  // 如果没有机器人出价，缩短等待时间，立即成交
+  if (!botOutbid) {
+    setTimeout(async () => {
+      if (isCancelled.value) return
+      const isWinner = auction.value.highestBidder?.toLowerCase() === userStore.address?.toLowerCase()
+      if (isWinner) {
+        await finalizeBidResult(true)
+      }
+    }, 1500)
+  }
 
   bidding.value = false
 }
@@ -523,6 +572,14 @@ const handleCancelBid = () => {
 // 计算属性与工具
 // ==========================================
 
+const isMine = computed(() => {
+  if (!auction.value || !userStore.isConnected) return false
+  return (
+    auction.value.highestBidder?.toLowerCase() === userStore.address?.toLowerCase() &&
+    (auction.value.status === 4 || battleState.value === 'success')
+  )
+})
+
 const minBid = computed(() => {
   if (!auction.value) return 0
   const highest = Number(auction.value.highestBid) || 0
@@ -557,13 +614,21 @@ const formatTime = (time: string | number | Date) => {
 const getExplorerUrl = (txHash: string) =>
   `https://sepolia.etherscan.io/tx/${txHash}`
 
-const getStatusType = (status: number) => ({
-  0: 'warning', 1: 'success', 2: 'info', 3: 'danger', 4: 'info'
-}[status] || 'info')
+const getStatusType = (status: number) => {
+  if (battleState.value === 'success') return 'info'
+  if (isCancelled.value) return 'danger'
+  return {
+    0: 'warning', 1: 'success', 2: 'info', 3: 'danger', 4: 'info'
+  }[status] || 'info'
+}
 
-const getStatusText = (status: number) => ({
-  0: '待发布', 1: '拍卖中', 2: '待结算', 3: '已流拍', 4: '已完成'
-}[status] || '未知')
+const getStatusText = (status: number) => {
+  if (battleState.value === 'success') return '已成交'
+  if (isCancelled.value) return '已结束'
+  return {
+    0: '待发布', 1: '拍卖中', 2: '待结算', 3: '已流拍', 4: '已完成'
+  }[status] || '未知'
+}
 
 const fetchAuctionDetail = async () => {
   auction.value = null
@@ -573,21 +638,34 @@ const fetchAuctionDetail = async () => {
   if (!idParam) return
 
   const id = String(idParam).trim()
-  const isMock = id.startsWith('mock-') || isNaN(Number(id))
+  const isMock = id.startsWith('mock-') || isNaN(Number(id)) || (Number(id) >= 100 && Number(id) < 200)
 
   if (isMock) {
     const foundMock = mockAuctions.find(m => m.auctionId === id)
-    const localMockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
-    const savedBid = localMockBids[id]
+    // 同时也从本地发布的作品中查找
+    const localCreated = JSON.parse(localStorage.getItem('MOCK_CREATED_AUCTIONS') || '[]')
+    const foundLocal = localCreated.find((m: any) => m.auctionId === id)
+    
+    const finalFound = foundLocal || foundMock
 
-    if (foundMock) {
-      auction.value = JSON.parse(JSON.stringify(foundMock))
+    if (finalFound) {
+      auction.value = JSON.parse(JSON.stringify(finalFound))
+
+      // 强制为进行中且设置未来时间（除非本地已成交）
+      const localMockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
+      const savedBid = localMockBids[id]
+      
       if (savedBid?.bidStatus === 'won') {
         auction.value.highestBid = savedBid.currentPrice
         auction.value.highestBidder = userStore.address
+        auction.value.status = 4
+        auction.value.endTime = savedBid.endTime
         battleState.value = 'success'
         isCancelled.value = true
         settleTime.value = savedBid.endTime
+      } else {
+        auction.value.status = 1
+        auction.value.endTime = Date.now() + 3 * 24 * 60 * 60 * 1000
       }
     } else {
       auction.value = {
@@ -617,6 +695,15 @@ const fetchAuctionDetail = async () => {
   try {
     const res = await getAuctionById(Number(id))
     auction.value = res.data
+    
+    // 测试模式：强制将后端数据设为“进行中”
+    if (auction.value) {
+      auction.value.status = 1
+      if (!auction.value.endTime || new Date(auction.value.endTime).getTime() <= Date.now()) {
+        auction.value.endTime = Date.now() + 3 * 24 * 60 * 60 * 1000
+      }
+    }
+
     const historyRes = await getBidHistory(Number(id))
     bidHistory.value = historyRes.data || []
     bidAmount.value = minBid.value
@@ -979,7 +1066,6 @@ watch(() => route.params.id, (newId) => {
             font-size: 13px;
             color: #666;
             margin: 0;
-            padding-left: 4px;
             strong {
               color: #1a1a2e;
             }
@@ -990,17 +1076,87 @@ watch(() => route.params.id, (newId) => {
           display: flex;
           flex-direction: column;
           gap: 12px;
-          width: 160px;
+          min-width: 160px;
 
-          .bid-btn, .cancel-btn {
-            width: 100%;
-            height: 48px;
-            margin: 0;
-            font-size: 16px;
+          .bid-btn {
+            height: 56px;
+            border-radius: 12px;
             font-weight: 700;
+            font-size: 16px;
+          }
+          .cancel-btn {
+            height: 48px;
             border-radius: 12px;
           }
         }
+      }
+    }
+
+    .owned-info-card {
+      background: linear-gradient(135deg, #ffffff 0%, #f0f7ff 100%);
+      border-radius: 20px;
+      padding: 30px;
+      border: 2px solid #e1f3d8;
+      box-shadow: 0 10px 25px rgba(103, 194, 58, 0.1);
+      margin-bottom: 30px;
+
+      .owned-header {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        margin-bottom: 25px;
+
+        .check-icon {
+          color: #67c23a;
+        }
+
+        .owned-text {
+          h3 {
+            margin: 0 0 4px 0;
+            font-size: 22px;
+            color: #1a1a2e;
+            font-weight: 700;
+          }
+          p {
+            margin: 0;
+            font-size: 14px;
+            color: #666;
+          }
+        }
+      }
+
+      .owned-details {
+        background: #fff;
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 25px;
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+
+        .detail-item {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          
+          .label {
+            color: #999;
+            font-size: 14px;
+          }
+          .value {
+            color: #1a1a2e;
+            font-weight: 600;
+            font-size: 16px;
+          }
+        }
+      }
+
+      .manage-btn {
+        width: 100%;
+        height: 50px;
+        border-radius: 12px;
+        font-weight: 600;
+        letter-spacing: 1px;
       }
     }
 

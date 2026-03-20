@@ -20,33 +20,33 @@
       <div v-loading="loading" class="bids-list">
         <template v-if="filteredBids.length > 0">
           <el-row :gutter="24">
-            <el-col :xs="24" :sm="12" :md="8" v-for="bid in filteredBids" :key="bid.id">
-              <el-card class="bid-card" shadow="hover" :body-style="{ padding: '0px' }">
+            <el-col :xs="24" :sm="12" :md="8" :lg="6" v-for="bid in filteredBids" :key="bid.id">
+              <el-card class="bid-card" shadow="hover" @click="viewDetail(bid)">
                 <div class="artwork-preview">
                   <el-image :src="bid.imageUrl" fit="cover" class="preview-img">
                     <template #error>
                       <div class="image-placeholder">
-                        <el-icon :size="40"><Picture /></el-icon>
+                        <el-icon><Picture /></el-icon>
                       </div>
                     </template>
                   </el-image>
                   <div class="status-tag" :class="bid.bidStatus">
-                    {{ bidStatusMap[bid.bidStatus] }}
+                    {{ getStatusText(bid.bidStatus) }}
                   </div>
-                  <el-button 
-                    class="delete-btn" 
-                    type="danger" 
-                    :icon="Delete" 
-                    circle 
+                  <el-button
+                    class="delete-btn"
+                    type="danger"
+                    :icon="Delete"
+                    circle
                     size="small"
                     @click.stop="handleDelete(bid.id)"
                   />
                 </div>
                 <div class="bid-content">
-                  <h3 class="artwork-title">{{ bid.title }}</h3>
+                  <h3 class="artwork-title">{{ bid.title || '未命名作品' }}</h3>
                   <div class="bid-info-grid">
                     <div class="info-item">
-                      <span class="label">当前价格</span>
+                      <span class="label">{{ bid.bidStatus === 'won' ? '成交价格' : '当前价格' }}</span>
                       <span class="value">{{ formatPrice(bid.currentPrice) }} ETH</span>
                     </div>
                     <div class="info-item">
@@ -55,11 +55,11 @@
                     </div>
                   </div>
                   <div class="time-info">
-                    <el-icon><Timer /></el-icon>
-                    <span>{{ formatTime(bid.endTime) }}</span>
+                    <el-icon><Clock /></el-icon>
+                    <span>{{ bid.bidStatus === 'active' ? '结束时间：' : '结算时间：' }}{{ formatTime(bid.endTime) }}</span>
                   </div>
                   <div class="card-footer">
-                    <el-button type="primary" plain @click="viewDetail(bid.id)">查看详情</el-button>
+                    <el-button type="primary" plain size="small">查看详情</el-button>
                   </div>
                 </div>
               </el-card>
@@ -77,12 +77,13 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { Picture, Timer, Delete } from '@element-plus/icons-vue'
+import { CircleCheckFilled, Delete, Picture, Clock } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getMyBids } from '@/api/auction'
 import { useUserStore } from '@/stores/user'
 import type { Auction } from '@/types'
 import { mockAuctions } from '@/utils/mockData'
+import { formatPrice } from '@/utils/format'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -90,10 +91,13 @@ const loading = ref(false)
 const activeTab = ref('active')
 const bids = ref<any[]>([]) // 扩展 Auction 带有 bidStatus
 
-const bidStatusMap: Record<string, string> = {
-  active: '进行中',
-  won: '竞拍成功',
-  lost: '竞拍失败'
+const getStatusText = (status: string) => {
+  const map: any = {
+    'active': '正在参与',
+    'won': '竞拍成功',
+    'lost': '竞拍失败'
+  }
+  return map[status] || status
 }
 
 const filteredBids = computed(() => {
@@ -172,15 +176,19 @@ const fetchMyBids = async () => {
   }
 }
 
-const formatTime = (time: string) => {
+const formatTime = (time: string | number) => {
   if (!time) return '已结束'
   return new Date(time).toLocaleString()
 }
 
-import { formatPrice } from '@/utils/format'
-
-const viewDetail = (id: string | number) => {
-  router.push({ name: 'AuctionDetail', params: { id } })
+const viewDetail = (bid: any) => {
+  if (bid.bidStatus === 'won') {
+    router.push({ name: 'WonAuctionDetail', params: { id: bid.id } })
+  } else if (bid.bidStatus === 'lost') {
+    router.push({ name: 'LostAuctionDetail', params: { id: bid.id } })
+  } else {
+    router.push({ name: 'AuctionDetail', params: { id: bid.id } })
+  }
 }
 
 const handleDelete = (id: string | number) => {
@@ -261,6 +269,57 @@ onMounted(() => {
     color: #94a3b8;
     &.is-active {
       color: #3b82f6;
+    }
+  }
+}
+
+.won-artwork-card {
+  position: relative;
+  height: 280px;
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+  transition: transform 0.3s;
+  margin-bottom: 24px;
+
+  &:hover {
+    transform: translateY(-5px);
+    .won-overlay {
+      opacity: 1;
+    }
+  }
+
+  .won-img {
+    width: 100%;
+    height: 100%;
+  }
+
+  .won-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    opacity: 0;
+    transition: opacity 0.3s;
+    backdrop-filter: blur(2px);
+
+    .el-icon {
+      font-size: 40px;
+      margin-bottom: 10px;
+      color: #67c23a;
+    }
+
+    span {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 2px;
     }
   }
 }

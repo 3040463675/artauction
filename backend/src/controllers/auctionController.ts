@@ -24,6 +24,15 @@ export const getAuctions = async (req: Request, res: Response, next: NextFunctio
       where.status = Number(status)
     }
 
+    // 模糊搜索作品名称或描述
+    if (keyword) {
+      where[Op.or] = [
+        { '$artwork.name$': { [Op.like]: `%${keyword}%` } },
+        { '$artwork.description$': { [Op.like]: `%${keyword}%` } },
+        { auctionId: { [Op.like]: `%${keyword}%` } }
+      ]
+    }
+
     // 排序
     let order: any = [['createdAt', 'DESC']]
     if (sortBy === 'endTime') {

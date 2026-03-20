@@ -24,7 +24,10 @@ import { setupAssociations } from './models'
 const app = express()
 
 // 基础中间件
-app.use(helmet())
+app.use(helmet({
+  crossOriginResourcePolicy: false,
+  contentSecurityPolicy: false
+}))
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
     ? ['https://your-domain.com'] 

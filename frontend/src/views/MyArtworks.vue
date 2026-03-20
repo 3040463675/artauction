@@ -24,30 +24,11 @@
         <template v-if="filteredArtworks.length > 0">
           <el-row :gutter="24">
             <el-col :xs="24" :sm="12" :md="8" :lg="6" v-for="item in filteredArtworks" :key="item.id">
-              <el-card class="artwork-card" :body-style="{ padding: '0px' }" shadow="hover">
-                <div class="image-wrapper">
-                  <el-image :src="item.artwork?.imageUrl" fit="cover" class="artwork-image">
-                    <template #error>
-                      <div class="image-placeholder">
-                        <el-icon :size="48"><Picture /></el-icon>
-                      </div>
-                    </template>
-                  </el-image>
-                  <div class="status-badge" :class="getStatusClass(item.status)">
-                    {{ getStatusText(item.status) }}
-                  </div>
-                </div>
-                <div class="card-content">
-                  <h3 class="title">{{ item.artwork?.name || '未命名作品' }}</h3>
-                  <div class="price-info">
-                    <span class="label">当前出价</span>
-                    <span class="price">{{ formatPrice(item.highestBid || item.startingPrice) }} ETH</span>
-                  </div>
-                  <div class="card-footer">
-                    <el-button type="primary" plain @click="viewDetail(item)">查看详情</el-button>
-                  </div>
-                </div>
-              </el-card>
+              <AuctionCard 
+                :auction="item" 
+                :show-countdown="item.status === 1" 
+                @click="viewDetail(item)"
+              />
             </el-col>
           </el-row>
         </template>
@@ -62,12 +43,12 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { Plus, Picture } from '@element-plus/icons-vue'
+import { Plus } from '@element-plus/icons-vue'
 import { getMyAuctions } from '@/api/auction'
 import { useUserStore } from '@/stores/user'
 import type { Auction } from '@/types'
 import { mockAuctions } from '@/utils/mockData'
-import { formatPrice } from '@/utils/format'
+import AuctionCard from '@/components/AuctionCard.vue'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -75,35 +56,18 @@ const loading = ref(false)
 const artworks = ref<Auction[]>([])
 const statusFilter = ref('all')
 
-const getStatusText = (status: number) => {
-  const texts: Record<number, string> = {
-    0: '待开始',
-    1: '进行中',
-    2: '已结束',
-    3: '已取消',
-    4: '已结算'
-  }
-  return texts[status] || '未知'
-}
-
-const getStatusClass = (status: number) => {
-  const classes: Record<number, string> = {
-    0: 'pending',
-    1: 'auctioning',
-    2: 'ended',
-    3: 'cancelled',
-    4: 'settled'
-  }
-  return classes[status] || ''
-}
-
 const filteredArtworks = computed(() => {
   if (statusFilter.value === 'all') return artworks.value
   const statusMap: Record<string, number> = {
     'auctioning': 1,
-    'ended': 2
+    'ended': 4 // 4 代表已结算/已完成
   }
-  return artworks.value.filter(item => item.status === statusMap[statusFilter.value])
+  return artworks.value.filter(item => {
+    if (statusFilter.value === 'ended') {
+      return item.status === 4 || item.status === 2 || item.status === 3
+    }
+    return item.status === statusMap[statusFilter.value]
+  })
 })
 
 const fetchMyArtworks = async () => {
@@ -111,10 +75,17 @@ const fetchMyArtworks = async () => {
   loading.value = true
   try {
     const res = await getMyAuctions(userStore.address)
-    if (res.data && res.data.length > 0) {
-      artworks.value = res.data
-    } else {
-      // 模拟数据回退：显示共享数据中的第一件作品作为自己的
+    // 1. 获取本地发布的作品（通过 localStorage）
+    const localCreated = JSON.parse(localStorage.getItem('MOCK_CREATED_AUCTIONS') || '[]')
+    
+    // 2. 获取接口返回的作品
+    const rawListFromApi = res.data || []
+    
+    // 3. 合并列表
+    artworks.value = [...localCreated, ...rawListFromApi]
+
+    // 4. 如果合并后还是空的，显示一个默认的 mock 数据（可选，为了演示效果）
+    if (artworks.value.length === 0) {
       const mock = mockAuctions[0]
       artworks.value = [
         {
@@ -126,6 +97,9 @@ const fetchMyArtworks = async () => {
     }
   } catch (error) {
     console.error('Failed to fetch my artworks:', error)
+    // 报错时尝试显示本地数据
+    const localCreated = JSON.parse(localStorage.getItem('MOCK_CREATED_AUCTIONS') || '[]')
+    artworks.value = localCreated
   } finally {
     loading.value = false
   }

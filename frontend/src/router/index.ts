@@ -22,6 +22,18 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '拍卖详情' }
   },
   {
+    path: '/won-detail/:id',
+    name: 'WonAuctionDetail',
+    component: () => import('@/views/WonAuctionDetail.vue'),
+    meta: { title: '竞拍成功详情', requiresAuth: true }
+  },
+  {
+    path: '/lost-detail/:id',
+    name: 'LostAuctionDetail',
+    component: () => import('@/views/LostAuctionDetail.vue'),
+    meta: { title: '竞拍失败详情', requiresAuth: true }
+  },
+  {
     path: '/create',
     name: 'CreateArtwork',
     component: () => import('@/views/CreateArtwork.vue'),

@@ -5,9 +5,9 @@ import { ethers } from "hardhat";
 // =========================================================
 
 // 配置项
-const AUCTION_CONTRACT_ADDRESS = "0x6B5B3DD61A7C87b30C1D9Fa309687127F1A8E928"; // TODO: 请替换为实际部署地址 (如果您重新部署了)
-const TARGET_AUCTION_ID = 0; // 监听的目标拍卖品ID
-const MAX_PRICE_LIMIT = ethers.parseEther("5.0"); // 机器人的心理价位上限 (5 ETH)
+const AUCTION_CONTRACT_ADDRESS = "0x67e3Fc1B997B5D76acdAf2DCa08ad73e2290C9f9"; // ✅ 已更新为您的实际部署地址
+const TARGET_AUCTION_ID = 0; // 监听的目标拍卖品ID (请确保您在页面上参与的是 ID 为 0 的拍卖)
+const MAX_PRICE_LIMIT = ethers.parseEther("10.0"); // 机器人的心理价位上限 (10 ETH)
 
 // 定义延迟函数
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -27,7 +27,7 @@ async function main() {
 
   // 2. 连接合约
   const Auction = await ethers.getContractFactory("Auction");
-  const auctionContract = Auction.attach(AUCTION_CONTRACT_ADDRESS);
+  const auctionContract = Auction.attach(AUCTION_CONTRACT_ADDRESS) as any;
 
   // 检查合约连接是否正常
   try {
@@ -48,13 +48,26 @@ async function main() {
 
   // 3. 监听 BidPlaced 事件
   // event BidPlaced(uint256 indexed auctionId, address indexed bidder, uint256 amount);
-  auctionContract.on("BidPlaced", async (auctionId, bidder, amount, event) => {
+  console.log(`\n🔔 正在等待事件触发... (合约地址: ${AUCTION_CONTRACT_ADDRESS})`);
+
+  auctionContract.on("BidPlaced", async (auctionId: any, bidder: any, amount: any, event: any) => {
+    const currentAuctionId = Number(auctionId);
+    console.log(`\n[${new Date().toLocaleTimeString()}] 📬 监听到 BidPlaced 事件!`);
+    console.log(`   - 拍卖 ID: ${currentAuctionId} (目标 ID: ${TARGET_AUCTION_ID})`);
+    console.log(`   - 出价人: ${bidder}`);
+    console.log(`   - 金额: ${ethers.formatEther(amount)} ETH`);
+
     // 过滤掉非目标拍卖品的事件
-    if (Number(auctionId) !== TARGET_AUCTION_ID) return;
+    if (currentAuctionId !== TARGET_AUCTION_ID) {
+      console.log(`   ⚠️ 结论: 监听到的是非目标拍卖 ID (${currentAuctionId})，忽略。`);
+      return;
+    }
 
     // 防止同一个事件被重复处理
-    if (event.transactionHash === lastProcessedBidHash) return;
-    lastProcessedBidHash = event.transactionHash;
+    // Ethers v6: event.log.transactionHash
+    const txHash = event.log ? event.log.transactionHash : event.transactionHash;
+    if (txHash === lastProcessedBidHash) return;
+    lastProcessedBidHash = txHash;
 
     console.log(`\n[${new Date().toLocaleTimeString()}] 🔔 链上异动！`);
     console.log(`   - 出价人: ${bidder}`);
@@ -67,11 +80,11 @@ async function main() {
     // 第一步：是不是我自己（机器人池里的账号）出的？
     const isBotBid = botPool.some(bot => bot.address.toLowerCase() === bidder.toLowerCase());
     if (isBotBid) {
-      console.log("   👉 结论: 这是机器人同伴出的价，保持静默，不引发内战。");
+      console.log("   👉 结论: 这是机器人同伴出的价，保持静默。");
       return;
     }
 
-    console.log("   👉 结论: 真实玩家出价了！进入紧张状态...");
+    console.log("   👉 结论: 玩家出价了！准备反击...");
 
     // 第二步：预算评估
     const auctionInfo = await auctionContract.getAuctionInfo(TARGET_AUCTION_ID);
@@ -85,24 +98,22 @@ async function main() {
     }
     console.log(`   ✅ 预算评估: 下一次出价 ${ethers.formatEther(nextBidAmount)} ETH，预算充足。`);
 
-    // 第三步：情绪模拟 (50% 放弃概率)
-    console.log("   🎲 正在掷硬币决定是否反击...");
-    if (Math.random() < 0.5) {
-      console.log("   🤷 情绪模拟: 掷到了反面。突然不想买了，随机放弃跟价。");
+    // 第三步：情绪模拟 (20% 放弃概率)
+    console.log("   🎲 正在决定是否反击...");
+    if (Math.random() < 0.2) {
+      console.log("   🤷 情绪模拟: 运气不好，随机放弃跟价。");
       return;
     }
-    console.log("   🔥 情绪模拟: 掷到了正面！决定死磕到底！");
+    console.log("   🔥 情绪模拟: 决定继续跟价！");
 
     // 第四步：假装思考一会儿 & 执行反击
-    // 随机挑选一个机器人
     const selectedBot = botPool[Math.floor(Math.random() * botPool.length)];
-    // 随机延迟 2~8 秒
-    const delay = Math.floor(Math.random() * 6000) + 2000;
+    const delay = Math.floor(Math.random() * 4000) + 1000; // 缩短思考时间 (1~5秒)
     
     console.log(`   🤔 机器人 [${selectedBot.address.slice(0,6)}] 正在假装思考 (${delay / 1000} 秒)...`);
     await sleep(delay);
 
-    console.log(`   🚀 思考结束，发送真实交易上链...`);
+    console.log(`   🚀 思考结束，发送交易上链进行反击...`);
     try {
       // 发送带 Value 的交易
       const tx = await auctionContract.connect(selectedBot).placeBid(

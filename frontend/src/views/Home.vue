@@ -56,17 +56,20 @@
     </section>
 
     <!-- 热门拍卖 -->
-    <section class="auctions-section">
+    <section class="auctions-section hot-section">
       <div class="container">
         <div class="section-header">
-          <h2>热门拍卖</h2>
-          <el-button text @click="$router.push('/auctions')">
-            查看更多 <el-icon><ArrowRight /></el-icon>
+          <div class="header-left">
+            <h2 class="section-title">热门拍卖</h2>
+            <p class="section-subtitle">当前市场上最受关注的 12 件数字艺术藏品</p>
+          </div>
+          <el-button type="primary" link @click="$router.push('/auctions')">
+            查看全部 <el-icon><ArrowRight /></el-icon>
           </el-button>
         </div>
 
-        <el-row :gutter="24" v-loading="loading">
-          <el-col :xs="24" :sm="12" :md="8" :lg="6" v-for="auction in hotAuctions" :key="auction.auctionId">
+        <el-row :gutter="30" v-loading="loading">
+          <el-col :xs="24" :sm="12" :md="8" :lg="6" v-for="auction in hotAuctions" :key="auction.auctionId" class="card-col">
             <AuctionCard :auction="auction" :show-countdown="true" @click="goToDetail(auction)" />
           </el-col>
         </el-row>
@@ -169,10 +172,37 @@ const fetchHotAuctions = async () => {
   loading.value = true
   try {
     const res = await getHotAuctions()
-    hotAuctions.value = res.data?.length > 0 ? res.data : mockAuctions.slice(0, 4)
+    // 1. 获取本地发布的作品
+    const localCreated = JSON.parse(localStorage.getItem('MOCK_CREATED_AUCTIONS') || '[]')
+    
+    // 2. 获取原始列表（优先接口，否则 mock）
+    const rawListFromApi = res.data?.length > 0 ? res.data : [...mockAuctions]
+    
+    // 3. 合并列表并强制所有作品为“进行中”状态进行测试
+    const combinedList = [...localCreated, ...rawListFromApi].map(item => ({
+      ...item,
+      status: 1, // 强制为进行中 (Active)
+      endTime: item.endTime && new Date(item.endTime).getTime() > Date.now() 
+        ? item.endTime 
+        : new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString() // 如果时间过期，重置为 3 天后
+    }))
+    
+    // 4. 同步本地模拟竞拍成功的状态并实现“下架”
+    const localMockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
+    hotAuctions.value = combinedList.filter(item => {
+      const bidInfo = localMockBids[item.auctionId || item.id]
+      // 如果本地记录中已成交，则直接从热门列表中移除（下架）
+      return !bidInfo
+    }).slice(0, 12) // 最终只取前 12 个展示
   } catch (error) {
     console.error('Failed to fetch hot auctions:', error)
-    hotAuctions.value = mockAuctions.slice(0, 4)
+    const localCreated = JSON.parse(localStorage.getItem('MOCK_CREATED_AUCTIONS') || '[]')
+    const combinedList = [...localCreated, ...mockAuctions].map(item => ({
+      ...item,
+      status: 1,
+      endTime: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString()
+    }))
+    hotAuctions.value = combinedList.slice(0, 12)
   } finally {
     loading.value = false
   }
@@ -182,10 +212,18 @@ const fetchEndingSoonAuctions = async () => {
   loadingEnding.value = true
   try {
     const res = await getEndingSoonAuctions()
-    endingSoonAuctions.value = res.data?.length > 0 ? res.data : mockAuctions.slice(4, 8)
+    const rawList = res.data?.length > 0 ? res.data : [...mockAuctions].slice(4, 8)
+
+    // 同步本地模拟竞拍成功的状态并实现“下架”
+    const localMockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
+    endingSoonAuctions.value = rawList.filter(item => {
+      const bidInfo = localMockBids[item.auctionId || item.id]
+      // 如果本地记录中已成交，则直接从“即将结束”列表中移除（下架）
+      return !bidInfo
+    })
   } catch (error) {
     console.error('Failed to fetch ending soon auctions:', error)
-    endingSoonAuctions.value = mockAuctions.slice(4, 8)
+    endingSoonAuctions.value = [...mockAuctions].slice(4, 8)
   } finally {
     loadingEnding.value = false
   }

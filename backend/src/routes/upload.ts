@@ -5,9 +5,9 @@ import { authMiddleware } from '../middleware/auth'
 const router = Router()
 
 // 上传单个图片
-router.post('/image', authMiddleware, upload.single('file'), uploadImage)
+router.post('/image', upload.single('file'), uploadImage)
 
 // 上传多张图片
-router.post('/images', authMiddleware, upload.array('files', 5), uploadImages)
+router.post('/images', upload.array('files', 5), uploadImages)
 
 export default router

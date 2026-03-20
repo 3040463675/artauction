@@ -5,8 +5,11 @@ import fs from 'fs'
 import { v4 as uuidv4 } from 'uuid'
 import { AppError } from '../middleware/error'
 
-// 确保上传目录存在
-const uploadDir = process.env.UPLOAD_DIR || './uploads'
+// 确保上传目录存在 (使用绝对路径，避免由于启动位置不同导致目录创建在错误位置)
+const uploadDir = path.isAbsolute(process.env.UPLOAD_DIR || './uploads') 
+  ? process.env.UPLOAD_DIR || './uploads'
+  : path.join(__dirname, '../../uploads')
+
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true })
 }
@@ -56,7 +59,12 @@ export const uploadImage = async (req: Request, res: Response, next: NextFunctio
 
     const file = req.file
     const relativePath = path.relative(uploadDir, file.path).replace(/\\/g, '/')
-    const url = `/uploads/${relativePath}`
+    
+    // 获取基础URL，用于拼接完整的图片访问地址
+    const protocol = req.protocol
+    const host = req.get('host')
+    const baseUrl = `${protocol}://${host}`
+    const url = `${baseUrl}/uploads/${relativePath}`
 
     res.success({
       url,
@@ -76,11 +84,15 @@ export const uploadImages = async (req: Request, res: Response, next: NextFuncti
       throw new AppError('请选择要上传的文件', -1, 400)
     }
 
+    const protocol = req.protocol
+    const host = req.get('host')
+    const baseUrl = `${protocol}://${host}`
+
     const files = req.files as Express.Multer.File[]
     const results = files.map(file => {
       const relativePath = path.relative(uploadDir, file.path).replace(/\\/g, '/')
       return {
-        url: `/uploads/${relativePath}`,
+        url: `${baseUrl}/uploads/${relativePath}`,
         filename: file.filename,
         size: file.size,
         mimetype: file.mimetype

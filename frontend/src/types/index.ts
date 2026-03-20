@@ -12,56 +12,57 @@ export enum AuctionStatus {
 
 // 艺术品信息
 export interface Artwork {
-  tokenId: number
+  id?: string | number
+  tokenId: number | string
   creator: string
   name: string
   description: string
   imageUrl: string
-  ipfsHash: string
-  createdAt: number
+  ipfsHash?: string
+  createdAt?: number | string
   isVerified: boolean
-  isOnAuction: boolean
+  isOnAuction?: boolean
   owner?: string
 }
 
 // 拍卖信息
 export interface Auction {
-  id: number
-  auctionId: number
-  tokenId: number
+  id?: string | number
+  auctionId: number | string
+  tokenId?: number | string
   artwork?: Artwork
-  sellerAddress: string
+  sellerAddress?: string
   startingPrice: string
-  reservePrice: string
+  reservePrice?: string
   minIncrement: string
-  startTime: number
-  endTime: number
+  startTime?: number | string
+  endTime: number | string
   highestBid: string
-  highestBidder: string
+  highestBidder?: string
   status: AuctionStatus
   txHash?: string
-  createdAt: number
+  createdAt?: number | string
 }
 
 // 出价记录
 export interface Bid {
-  id: number
-  auctionId: number
+  id?: string | number
+  auctionId: number | string
   bidderAddress: string
   amount: string
   txHash?: string
-  createdAt: string
+  createdAt: string | number
 }
 
 // 用户信息
 export interface User {
-  id: number
+  id?: string | number
   address: string
   username?: string
   avatar?: string
   role: UserRole
   email?: string
-  createdAt: string
+  createdAt?: string | number
 }
 
 // API响应
