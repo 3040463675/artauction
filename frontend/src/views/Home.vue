@@ -78,22 +78,6 @@
       </div>
     </section>
 
-    <!-- 即将结束 -->
-    <section class="auctions-section ending-soon">
-      <div class="container">
-        <div class="section-header">
-          <h2>即将结束</h2>
-          <el-tag type="danger">限时</el-tag>
-        </div>
-
-        <el-row :gutter="24" v-loading="loadingEnding">
-          <el-col :xs="24" :sm="12" :md="8" :lg="6" v-for="auction in endingSoonAuctions" :key="auction.auctionId">
-            <AuctionCard :auction="auction" :showCountdown="true" @click="goToDetail(auction)" />
-          </el-col>
-        </el-row>
-      </div>
-    </section>
-
     <!-- 平台特点 -->
     <section class="features-section">
       <div class="container">
@@ -130,7 +114,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
-import { getHotAuctions, getEndingSoonAuctions } from '@/api/auction'
+import { getHotAuctions } from '@/api/auction'
 import AuctionCard from '@/components/AuctionCard.vue'
 import { mockAuctions } from '@/utils/mockData'
 import { formatPrice } from '@/utils/format'
@@ -139,9 +123,7 @@ const router = useRouter()
 const userStore = useUserStore()
 
 const loading = ref(false)
-const loadingEnding = ref(false)
 const hotAuctions = ref<any[]>([])
-const endingSoonAuctions = ref<any[]>([])
 
 const carouselItems = [
   {
@@ -208,27 +190,6 @@ const fetchHotAuctions = async () => {
   }
 }
 
-const fetchEndingSoonAuctions = async () => {
-  loadingEnding.value = true
-  try {
-    const res = await getEndingSoonAuctions()
-    const rawList = res.data?.length > 0 ? res.data : [...mockAuctions].slice(4, 8)
-
-    // 同步本地模拟竞拍成功的状态并实现“下架”
-    const localMockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
-    endingSoonAuctions.value = rawList.filter(item => {
-      const bidInfo = localMockBids[item.auctionId || item.id]
-      // 如果本地记录中已成交，则直接从“即将结束”列表中移除（下架）
-      return !bidInfo
-    })
-  } catch (error) {
-    console.error('Failed to fetch ending soon auctions:', error)
-    endingSoonAuctions.value = [...mockAuctions].slice(4, 8)
-  } finally {
-    loadingEnding.value = false
-  }
-}
-
 const goToDetail = (auction: any) => {
   const id = auction.id || auction.auctionId
   router.push(`/auction/${id}`)
@@ -240,7 +201,6 @@ const handleCreate = () => {
 
 onMounted(() => {
   fetchHotAuctions()
-  fetchEndingSoonAuctions()
 })
 </script>
 
