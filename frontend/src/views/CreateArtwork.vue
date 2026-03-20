@@ -148,7 +148,7 @@
 
                 <div class="preview-price">
                   <span class="label">起拍价</span>
-                  <span class="value">{{ form.startingPrice || 0 }} ETH</span>
+                  <span class="value">{{ formatPrice(form.startingPrice) }} ETH</span>
                 </div>
               </div>
 
@@ -177,6 +177,7 @@ import type { FormInstance, FormRules, UploadProps } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { mintArt, createAuction } from '@/utils/contracts'
 import { uploadArtworkImage, createArtwork } from '@/api/artwork'
+import { formatPrice } from '@/utils/format'
 
 const router = useRouter()
 const userStore = useUserStore()

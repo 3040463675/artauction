@@ -46,12 +46,12 @@
                   <h3 class="artwork-title">{{ bid.title }}</h3>
                   <div class="bid-info-grid">
                     <div class="info-item">
-                      <span class="label">当前出价</span>
-                      <span class="value">{{ bid.currentPrice }} ETH</span>
+                      <span class="label">当前价格</span>
+                      <span class="value">{{ formatPrice(bid.currentPrice) }} ETH</span>
                     </div>
                     <div class="info-item">
                       <span class="label">我的出价</span>
-                      <span class="value my-bid">{{ bid.myPrice }} ETH</span>
+                      <span class="value my-bid">{{ formatPrice(bid.myPrice) }} ETH</span>
                     </div>
                   </div>
                   <div class="time-info">
@@ -107,22 +107,29 @@ const fetchMyBids = async () => {
   try {
     const res = await getMyBids(userStore.address)
     
+    // 获取已删除的黑名单列表
+    const deletedIds = JSON.parse(localStorage.getItem('MOCK_DELETED_BIDS') || '[]')
+    
     if (res.data?.length > 0) {
-      bids.value = res.data.map(item => ({
-        ...item,
-        myPrice: item.highestBid || item.startingPrice,
-        bidStatus: item.status === 1 ? 'active' : (item.highestBidder === userStore.address ? 'won' : 'lost'),
-        // 确保字段映射
-        title: item.artwork?.name,
-        imageUrl: item.artwork?.imageUrl,
-        currentPrice: item.highestBid || item.startingPrice
-      }))
+      bids.value = res.data
+        .filter(item => !deletedIds.includes(item.id) && !deletedIds.includes(item.auctionId))
+        .map(item => ({
+          ...item,
+          myPrice: item.highestBid || item.startingPrice,
+          bidStatus: item.status === 1 ? 'active' : (item.highestBidder === userStore.address ? 'won' : 'lost'),
+          // 确保字段映射
+          title: item.artwork?.name,
+          imageUrl: item.artwork?.imageUrl,
+          currentPrice: item.highestBid || item.startingPrice
+        }))
     } else {
       const localMockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
       const resultBids: any[] = []
       
-      // 1. 先加载本地存储中的所有记录（这些是用户真实参与过的）
+      // 1. 先加载本地存储中的所有记录（排除已删除的）
       Object.keys(localMockBids).forEach(id => {
+        if (deletedIds.includes(id)) return
+        
         const saved = localMockBids[id]
         const mockInfo = mockAuctions.find(m => m.auctionId === id)
         
@@ -134,10 +141,11 @@ const fetchMyBids = async () => {
         })
       })
 
-      // 2. 如果本地记录太少，补充一些默认的模拟数据（可选，为了页面好看）
+      // 2. 如果本地记录太少，补充一些默认的模拟数据（也要排除已删除的）
       if (resultBids.length < 3) {
-        mockAuctions.slice(0, 3).forEach((mock, index) => {
-          if (!localMockBids[mock.auctionId]) {
+        mockAuctions.forEach((mock, index) => {
+          if (resultBids.length >= 3) return // 最多补充到 3 条
+          if (!localMockBids[mock.auctionId] && !deletedIds.includes(mock.auctionId)) {
             let defaultStatus = 'active'
             if (index === 1) defaultStatus = 'won'
             if (index === 2) defaultStatus = 'lost'
@@ -169,6 +177,8 @@ const formatTime = (time: string) => {
   return new Date(time).toLocaleString()
 }
 
+import { formatPrice } from '@/utils/format'
+
 const viewDetail = (id: string | number) => {
   router.push({ name: 'AuctionDetail', params: { id } })
 }
@@ -183,10 +193,17 @@ const handleDelete = (id: string | number) => {
       type: 'warning',
     }
   ).then(() => {
-    // 从本地状态中移除
+    // 1. 从本地状态中移除
     bids.value = bids.value.filter(item => item.id !== id)
     
-    // 如果是模拟数据且在 localStorage 中，同步移除
+    // 2. 记录到“已删除名单”，防止刷新后重新出现
+    const deletedIds = JSON.parse(localStorage.getItem('MOCK_DELETED_BIDS') || '[]')
+    if (!deletedIds.includes(id)) {
+      deletedIds.push(id)
+      localStorage.setItem('MOCK_DELETED_BIDS', JSON.stringify(deletedIds))
+    }
+    
+    // 3. 如果是模拟数据且在 localStorage 中，同步移除
     const localMockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
     if (localMockBids[id]) {
       delete localMockBids[id]

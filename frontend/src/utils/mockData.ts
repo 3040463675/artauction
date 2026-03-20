@@ -1,3 +1,10 @@
+const getRandomEndTime = () => {
+  // 随机生成 1 小时到 48 小时 (2天) 之间的时间戳
+  const oneHour = 3600 * 1000
+  const twoDays = 48 * 3600 * 1000
+  return Date.now() + Math.floor(Math.random() * (twoDays - oneHour) + oneHour)
+}
+
 export const mockAuctions = [
   {
     auctionId: 'mock-a1',
@@ -11,7 +18,7 @@ export const mockAuctions = [
     startingPrice: '1.0',
     minIncrement: '0.1',
     status: 1,
-    endTime: Date.now() + 86400000
+    endTime: getRandomEndTime()
   },
   {
     auctionId: 'mock-a2',
@@ -25,7 +32,7 @@ export const mockAuctions = [
     startingPrice: '2.0',
     minIncrement: '0.2',
     status: 1,
-    endTime: Date.now() + 172800000
+    endTime: getRandomEndTime()
   },
   {
     auctionId: 'mock-a3',
@@ -39,7 +46,7 @@ export const mockAuctions = [
     startingPrice: '0.5',
     minIncrement: '0.05',
     status: 1,
-    endTime: Date.now() + 259200000
+    endTime: getRandomEndTime()
   },
   {
     auctionId: 'mock-a4',
@@ -53,7 +60,7 @@ export const mockAuctions = [
     startingPrice: '2.5',
     minIncrement: '0.5',
     status: 1,
-    endTime: Date.now() + 345600000
+    endTime: getRandomEndTime()
   },
   {
     auctionId: 'mock-a5',
@@ -67,7 +74,7 @@ export const mockAuctions = [
     startingPrice: '4.0',
     minIncrement: '0.5',
     status: 1,
-    endTime: Date.now() + 3600000
+    endTime: getRandomEndTime()
   },
   {
     auctionId: 'mock-a6',
@@ -81,7 +88,7 @@ export const mockAuctions = [
     startingPrice: '0.8',
     minIncrement: '0.1',
     status: 1,
-    endTime: Date.now() + 7200000
+    endTime: getRandomEndTime()
   },
   {
     auctionId: 'mock-a7',
@@ -95,7 +102,7 @@ export const mockAuctions = [
     startingPrice: '0.3',
     minIncrement: '0.05',
     status: 1,
-    endTime: Date.now() + 10800000
+    endTime: getRandomEndTime()
   },
   {
     auctionId: 'mock-a8',
@@ -109,6 +116,6 @@ export const mockAuctions = [
     startingPrice: '3.5',
     minIncrement: '0.2',
     status: 1,
-    endTime: Date.now() + 14400000
+    endTime: getRandomEndTime()
   }
 ]

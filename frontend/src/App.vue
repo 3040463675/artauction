@@ -33,7 +33,7 @@
                 {{ formatAddress(userStore.address) }}
               </el-tag>
               <span class="balance">
-                {{ userStore.balance }} ETH
+                {{ formatPrice(userStore.balance) }} ETH
               </span>
               <el-button type="danger" size="small" @click="disconnectWallet">
                 断开连接
@@ -96,13 +96,17 @@ import { ElMessage } from 'element-plus'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import { useUserStore } from '@/stores/user'
 import { connectWallet as connect, disconnectWallet as disconnect } from '@/utils/wallet'
+import { formatPrice } from '@/utils/format'
 
 const userStore = useUserStore()
 
 // 格式化地址显示
-const formatAddress = (address: string) => {
+const formatAddress = (address: any) => {
   if (!address) return ''
-  return `${address.slice(0, 6)}...${address.slice(-4)}`
+  // 如果传入的是对象且包含 address 属性，提取地址
+  const addr = typeof address === 'object' ? address.address : address
+  if (!addr || typeof addr !== 'string') return ''
+  return `${addr.slice(0, 6)}...${addr.slice(-4)}`
 }
 
 // 连接钱包

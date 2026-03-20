@@ -41,7 +41,7 @@
                   <h3 class="title">{{ item.artwork?.name || '未命名作品' }}</h3>
                   <div class="price-info">
                     <span class="label">当前出价</span>
-                    <span class="price">{{ item.highestBid || item.startingPrice }} ETH</span>
+                    <span class="price">{{ formatPrice(item.highestBid || item.startingPrice) }} ETH</span>
                   </div>
                   <div class="card-footer">
                     <el-button type="primary" plain @click="viewDetail(item)">查看详情</el-button>
@@ -67,6 +67,7 @@ import { getMyAuctions } from '@/api/auction'
 import { useUserStore } from '@/stores/user'
 import type { Auction } from '@/types'
 import { mockAuctions } from '@/utils/mockData'
+import { formatPrice } from '@/utils/format'
 
 const router = useRouter()
 const userStore = useUserStore()

@@ -6,7 +6,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 
 interface Props {
-  endTime: number
+  endTime: number | string
 }
 
 const props = defineProps<Props>()
@@ -15,8 +15,15 @@ const emit = defineEmits(['end'])
 const now = ref(Date.now())
 let timer: number | null = null
 
+const endTimeMs = computed(() => {
+  if (typeof props.endTime === 'string') {
+    return new Date(props.endTime).getTime()
+  }
+  return props.endTime
+})
+
 const remaining = computed(() => {
-  return Math.max(0, props.endTime - now.value)
+  return Math.max(0, endTimeMs.value - now.value)
 })
 
 const formattedTime = computed(() => {

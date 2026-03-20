@@ -64,9 +64,15 @@ export const getAuctions = async (req: Request, res: Response, next: NextFunctio
 export const getAuctionById = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params
+    const { Op } = require('sequelize')
 
     const auction = await Auction.findOne({
-      where: { id },
+      where: {
+        [Op.or]: [
+          { id: id },
+          { auctionId: id }
+        ]
+      },
       include: [
         {
           model: Artwork,
@@ -91,10 +97,23 @@ export const getAuctionById = async (req: Request, res: Response, next: NextFunc
 export const getBidHistory = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { auctionId } = req.params
+    const { Op } = require('sequelize')
 
     const bids = await Bid.findAll({
-      where: { auctionId },
-      include: [{ model: User, as: 'bidder', attributes: ['id', 'address', 'username', 'avatar'] }],
+      where: {
+        [Op.or]: [
+          { auctionId: auctionId },
+          { '$auction.id$': auctionId } // 也可以通过关联的数据库ID查找
+        ]
+      },
+      include: [
+        { 
+          model: Auction, 
+          as: 'auction',
+          attributes: ['id', 'auctionId']
+        },
+        { model: User, as: 'bidder', attributes: ['id', 'address', 'username', 'avatar'] }
+      ],
       order: [['createdAt', 'DESC']],
       limit: 50
     })

@@ -28,7 +28,7 @@
         
         <div class="user-stats">
           <div class="stat-item">
-            <div class="stat-value">{{ userStore.balance }} ETH</div>
+            <div class="stat-value">{{ formatPrice(userStore.balance) }} ETH</div>
             <div class="stat-label">账户余额</div>
           </div>
           <el-divider direction="vertical" />
@@ -82,6 +82,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useUserStore } from '@/stores/user'
 import { ElMessage } from 'element-plus'
+import { formatPrice } from '@/utils/format'
 import { getMyAuctions, getMyBids } from '@/api/auction'
 import { 
   User, 

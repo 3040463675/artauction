@@ -10,7 +10,7 @@
       <h3 class="card-title">{{ auction.artwork?.name || '未命名作品' }}</h3>
       <div class="card-price">
         <span class="label">当前价格</span>
-        <span class="value">{{ auction.highestBid || auction.startingPrice }} ETH</span>
+        <span class="value">{{ formatPrice(auction.highestBid || auction.startingPrice) }} ETH</span>
       </div>
       <el-tag :type="getStatusType(auction.status)" size="small">
         {{ getStatusText(auction.status) }}
@@ -22,6 +22,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import CountdownTimer from './CountdownTimer.vue'
+import { formatPrice } from '@/utils/format'
 
 interface Props {
   auction: any

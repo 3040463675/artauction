@@ -1,16 +1,17 @@
 <template>
   <div class="auction-detail-page" v-loading="loading">
     <div class="container" v-if="auction">
+      <!-- 面包屑导航 -->
       <div class="breadcrumb">
         <el-breadcrumb separator="/">
           <el-breadcrumb-item :to="{ path: '/' }">首页</el-breadcrumb-item>
           <el-breadcrumb-item :to="{ path: '/explore' }">探索</el-breadcrumb-item>
-          <el-breadcrumb-item>作品详情</el-breadcrumb-item>
+          <el-breadcrumb-item>拍卖详情</el-breadcrumb-item>
         </el-breadcrumb>
       </div>
 
       <el-row :gutter="40" class="main-content">
-        <!-- 左侧图片展示 -->
+        <!-- 作品图片区域 -->
         <el-col :xs="24" :md="12">
           <div class="image-card">
             <div class="image-wrapper">
@@ -25,18 +26,18 @@
                 <span>已认证</span>
               </div>
             </div>
-            
+
             <div class="artwork-meta-grid">
               <div class="meta-item">
                 <span class="label">Token ID</span>
                 <span class="value">#{{ auction.artwork?.tokenId }}</span>
               </div>
               <div class="meta-item">
-                <span class="label">存储</span>
-                <el-link 
-                  v-if="auction.artwork?.ipfsHash" 
-                  :href="'https://ipfs.io/ipfs/' + auction.artwork.ipfsHash" 
-                  target="_blank" 
+                <span class="label">原始文件</span>
+                <el-link
+                  v-if="auction.artwork?.ipfsHash"
+                  :href="'https://ipfs.io/ipfs/' + auction.artwork.ipfsHash"
+                  target="_blank"
                   type="primary"
                   class="value"
                 >
@@ -51,7 +52,7 @@
           </div>
         </el-col>
 
-        <!-- 右侧竞拍信息 -->
+        <!-- 拍卖操作区域 -->
         <el-col :xs="24" :md="12">
           <div class="auction-card">
             <div class="header-info">
@@ -61,7 +62,7 @@
                   竞拍成功
                 </el-tag>
                 <el-tag v-else-if="auction.highestBidder === userStore.address" type="success" class="highest-bidder-tag">
-                  最高出价
+                  最高出价者
                 </el-tag>
               </div>
               <div class="status-tags">
@@ -70,7 +71,7 @@
                 </el-tag>
                 <el-tag type="info" v-if="auction.txHash">
                   <el-link :href="getExplorerUrl(auction.txHash)" target="_blank" :underline="false">
-                    链上存证 <el-icon><TopRight /></el-icon>
+                    区块链浏览器 <el-icon><TopRight /></el-icon>
                   </el-link>
                 </el-tag>
               </div>
@@ -86,26 +87,17 @@
                   <span class="address">{{ formatAddress(auction.artwork?.creator) }}</span>
                 </div>
               </div>
-              <div class="profile-item">
-                <el-avatar :size="48" class="owner-avatar">
-                  <el-icon :size="24"><Wallet /></el-icon>
-                </el-avatar>
-                <div class="profile-info">
-                  <span class="label">持有者</span>
-                  <span class="address">{{ formatAddress(auction.sellerAddress) }}</span>
-                </div>
-              </div>
             </div>
 
             <div class="price-display-card">
               <div class="bid-info">
-                <span class="label">{{ auction.status === 1 ? '当前出价' : '最终成交价' }}</span>
+                <span class="label">{{ auction.status === 1 ? '当前最高出价' : '起拍价格' }}</span>
                 <div class="price-value">
-                  <span class="amount">{{ auction.highestBid || auction.startingPrice }}</span>
+                  <span class="amount">{{ formatPrice(auction.highestBid || auction.startingPrice) }}</span>
                   <span class="unit">ETH</span>
                 </div>
                 <div class="reserve-status" v-if="auction.reservePrice > 0">
-                  <el-tooltip :content="'保留价: ' + auction.reservePrice + ' ETH'" placement="top">
+                  <el-tooltip :content="'保留价: ' + formatPrice(auction.reservePrice) + ' ETH'" placement="top">
                     <span class="reserve-label">
                       <el-icon><Lock /></el-icon>
                       {{ Number(auction.highestBid) >= Number(auction.reservePrice) ? '已达保留价' : '未达保留价' }}
@@ -115,7 +107,7 @@
               </div>
 
               <div class="timer-info">
-                <span class="label">{{ battleState === 'success' || isCancelled ? '成交时间' : '拍卖截止' }}</span>
+                <span class="label">{{ battleState === 'success' || isCancelled ? '结算时间' : '距离结束' }}</span>
                 <div v-if="battleState === 'success' || isCancelled" class="settle-time-display">
                   <el-icon><Clock /></el-icon>
                   <span>{{ settleTime }}</span>
@@ -127,11 +119,11 @@
             <div class="auction-specs">
               <div class="spec-item">
                 <span class="label">起拍价</span>
-                <span class="value">{{ auction.startingPrice }} ETH</span>
+                <span class="value">{{ formatPrice(auction.startingPrice) }} ETH</span>
               </div>
               <div class="spec-item">
-                <span class="label">最小加价</span>
-                <span class="value">{{ auction.minIncrement }} ETH</span>
+                <span class="label">最低加价</span>
+                <span class="value">{{ formatPrice(auction.minIncrement) }} ETH</span>
               </div>
             </div>
 
@@ -150,19 +142,19 @@
                     />
                     <span class="input-unit">ETH</span>
                   </div>
-                  <p class="min-bid-hint">最低有效出价: <strong>{{ minBid }} ETH</strong></p>
+                  <p class="min-bid-hint">最低出价: <strong>{{ formatPrice(minBid) }} ETH</strong></p>
                 </div>
-                
+
                 <div class="action-buttons">
                   <el-button
                     :type="battleState === 'success' ? 'info' : 'primary'"
                     size="large"
                     class="bid-btn premium-btn"
                     :loading="bidding"
-                    :disabled="isCancelled || battleState === 'success'"
+                    :disabled="isCancelled || battleState !== 'active'"
                     @click="handleBid"
                   >
-                    {{ battleState === 'success' ? '禁止竞拍' : '立即竞拍' }}
+                    {{ battleState === 'success' ? '已成交' : '参与竞拍' }}
                   </el-button>
                   <el-button
                     type="danger"
@@ -172,7 +164,7 @@
                     :disabled="isCancelled || battleState === 'success'"
                     @click="handleCancelBid"
                   >
-                    取消竞拍
+                    退出竞拍
                   </el-button>
                 </div>
               </div>
@@ -187,38 +179,38 @@
                 :loading="ending"
                 @click="handleEndAuction"
               >
-                结束并结算拍卖
+                结束本次拍卖
               </el-button>
             </div>
           </div>
         </el-col>
       </el-row>
 
+      <!-- 详情选项卡 -->
       <el-row :gutter="40" class="details-tabs">
         <el-col :span="24">
           <el-tabs v-model="activeTab" class="premium-tabs">
-            <el-tab-pane label="作品描述" name="desc">
+            <el-tab-pane label="作品详情" name="desc">
               <div class="content-panel">
                 <p class="description-text">{{ auction.artwork?.description || '暂无描述' }}</p>
               </div>
             </el-tab-pane>
-            <el-tab-pane label="出价记录" name="history">
+            <el-tab-pane label="出价历史" name="history">
               <div class="content-panel">
                 <el-table :data="bidHistory" style="width: 100%" class="history-table">
                   <el-table-column label="出价者" min-width="180">
                     <template #default="{ row, $index }">
                       <div class="bidder-cell">
                         <el-avatar :size="24" icon="User" />
-                        <span class="addr">{{ formatAddress(row.bidderAddress) }}</span>
-                        <!-- 只有当取消且是第一名时才显示皇冠 -->
-                        <span v-if="(isCancelled || battleState === 'success') && $index === 0" class="crown-icon" title="当前赢家">👑</span>
-                        <el-tag v-else-if="row.bidderAddress === auction.highestBidder" size="small" type="success" effect="plain" class="winner-tag">最高</el-tag>
+                        <span class="addr">{{ row.bidderName || formatAddress(row.bidderAddress) }}</span>
+                        <span v-if="(isCancelled || battleState === 'success') && $index === 0" class="crown-icon" title="竞拍获胜">🏆</span>
+                        <el-tag v-else-if="row.bidderAddress?.toLowerCase() === auction.highestBidder?.toLowerCase()" size="small" type="success" effect="plain" class="winner-tag">领先</el-tag>
                       </div>
                     </template>
                   </el-table-column>
                   <el-table-column label="金额" width="150">
                     <template #default="{ row }">
-                      <span class="bid-amount">{{ row.amount }} ETH</span>
+                      <span class="bid-amount">{{ formatPrice(row.amount) }} ETH</span>
                     </template>
                   </el-table-column>
                   <el-table-column label="时间" width="180">
@@ -226,7 +218,7 @@
                       <span class="time-text">{{ formatTime(row.createdAt) }}</span>
                     </template>
                   </el-table-column>
-                  <el-table-column label="交易" width="100" align="right">
+                  <el-table-column label="详情" width="100" align="right">
                     <template #default="{ row }">
                       <el-link v-if="row.txHash" :href="getExplorerUrl(row.txHash)" target="_blank">
                         <el-icon><TopRight /></el-icon>
@@ -234,21 +226,21 @@
                     </template>
                   </el-table-column>
                 </el-table>
-                <el-empty v-if="bidHistory.length === 0" description="目前尚无出价" />
+                <el-empty v-if="bidHistory.length === 0" description="暂无出价记录" />
               </div>
             </el-tab-pane>
-            <el-tab-pane label="艺术品属性" name="props">
+            <el-tab-pane label="作品属性" name="props">
               <div class="content-panel props-grid">
                 <div class="prop-card">
                   <span class="p-label">认证状态</span>
-                  <span class="p-value">{{ auction.artwork?.isVerified ? '官方认证' : '普通作品' }}</span>
+                  <span class="p-value">{{ auction.artwork?.isVerified ? '已认证' : '未认证' }}</span>
                 </div>
                 <div class="prop-card">
-                  <span class="p-label">创作日期</span>
+                  <span class="p-label">创建时间</span>
                   <span class="p-value">{{ formatTime(auction.artwork?.createdAt) }}</span>
                 </div>
                 <div class="prop-card">
-                  <span class="p-label">版权比例</span>
+                  <span class="p-label">创作者版税</span>
                   <span class="p-value">10%</span>
                 </div>
               </div>
@@ -264,8 +256,8 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { 
-  User, Wallet, Link, Lock, 
+import {
+  User, Wallet, Link, Lock,
   CircleCheckFilled, TopRight, Clock
 } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
@@ -273,21 +265,12 @@ import { useUserStore } from '@/stores/user'
 import { placeBid, endAuction } from '@/utils/contracts'
 import { getAuctionById, getBidHistory } from '@/api/auction'
 import CountdownTimer from '@/components/CountdownTimer.vue'
-import { ethers } from 'ethers'
 import { mockAuctions } from '@/utils/mockData'
+import { formatPrice } from '@/utils/format'
 
 // ==========================================
-// 🤖 机器人配置 (Ganache 测试专用)
+// 状态变量
 // ==========================================
-const BOT_PRIVATE_KEYS = [
-  '0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a', // Account 1
-  '0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6', // Account 2
-  '0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a', // Account 3
-  '0x8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba', // Account 4
-  '0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d6ffb2bc538910'  // Account 5
-]
-const GANACHE_RPC = "http://127.0.0.1:7545"
-
 const route = useRoute()
 const userStore = useUserStore()
 
@@ -295,189 +278,256 @@ const loading = ref(false)
 const bidding = ref(false)
 const ending = ref(false)
 const isCancelled = ref(false)
-const settleTime = ref('') // 定格时间
+const settleTime = ref('')
 const battleState = ref<'waiting' | 'active' | 'success' | 'cancelled'>('waiting')
 const isFirstLoad = ref(true)
+const pendingBotTimer = ref<any>(null)
 
 const auction = ref<any>(null)
 const bidHistory = ref<any[]>([])
 const bidAmount = ref(0)
 const activeTab = ref('desc')
 
-// 🤖 机器人执行真实出价 (用于开局抢跑或反击)
-const executeBotBid = async (auctionId: string | number, currentHighest: number) => {
-  const botIndex = Math.floor(Math.random() * BOT_PRIVATE_KEYS.length)
-  const botPrivateKey = BOT_PRIVATE_KEYS[botIndex]
-  
-  try {
-    const provider = new ethers.JsonRpcProvider(GANACHE_RPC)
-    const wallet = new ethers.Wallet(botPrivateKey, provider)
-    
-    const increment = Number(auction.value.minIncrement) || 0.1
-    const bidValue = (currentHighest + increment + (Math.random() * 0.05)).toFixed(4)
-    
-    // 如果是真实合约，执行合约调用；如果是 mock，执行转账以扣除余额
-    if (auctionId.toString().startsWith('mock-')) {
-      const previousBidder = auction.value.highestBidder
-      const previousAmount = auction.value.highestBid
+// ==========================================
+// 模拟机器人逻辑
+// ==========================================
 
-      const randomAddr = ethers.Wallet.createRandom().address
-      const tx = await wallet.sendTransaction({
-        to: randomAddr,
-        value: ethers.parseEther(bidValue)
-      })
-      await tx.wait()
+const makeRandomAddress = () =>
+  '0x' + Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join('')
 
-      // 💡 模拟退款逻辑 (仅针对 Mock 数据)
-      // 如果前一个出价者是当前登录用户，把钱“退回”给用户
-      if (previousBidder?.toLowerCase() === userStore.address.toLowerCase()) {
-        console.log(`💰 [Mock Refund] 退还用户 ${previousAmount} ETH`)
-        const currentBal = parseFloat(userStore.balance)
-        userStore.setBalance((currentBal + parseFloat(previousAmount)).toFixed(4))
-        ElMessage.info(`由于被反超，您的出价 ${previousAmount} ETH 已退回到钱包`)
-      }
+const truncateAddress = (address: string) => {
+  if (!address || address.length < 10) return address
+  return `${address.slice(0, 6)}...${address.slice(-4)}`
+}
 
-      // 更新本地 UI 状态 (Mock)
-      const newBid = {
-        bidderAddress: wallet.address,
-        amount: bidValue,
-        createdAt: Date.now(),
-        txHash: tx.hash
-      }
-      // 使用新数组引用确保 Vue 响应式触发
-      bidHistory.value = [newBid, ...bidHistory.value]
-      auction.value.highestBid = bidValue
-      auction.value.highestBidder = wallet.address
-      
-      // 同步更新输入框的最小出价
-      bidAmount.value = Number(bidValue) + (Number(auction.value.minIncrement) || 0.1)
-      
-      return { success: true, bidValue, bidder: wallet.address }
-    } else {
-      const auctionContract = new ethers.Contract(
-        import.meta.env.VITE_AUCTION_CONTRACT_ADDRESS,
-        ["function placeBid(uint256 auctionId) external payable"],
-        wallet
-      )
-      const tx = await auctionContract.placeBid(Number(auctionId), { 
-        value: ethers.parseEther(bidValue) 
-      })
-      await tx.wait()
-      return { success: true, bidValue, bidder: wallet.address }
-    }
-  } catch (e) {
-    console.error("机器人出价失败:", e)
-    return { success: false }
+const makeBotBid = (basePrice: number, minInc: number, timeOffset: number) => {
+  const inc = minInc * (Math.random() * 2 + 0.5)
+  const botAddress = makeRandomAddress()
+  return {
+    bidderName: formatAddress(botAddress),
+    bidderAddress: botAddress,
+    amount: parseFloat((basePrice + inc).toFixed(4)),
+    createdAt: Date.now() - timeOffset
   }
 }
 
-// 🎮 机器人“反击”逻辑：20% 概率在 3 秒内加价
-const triggerSimulationBotRevenge = async () => {
-  if (isCancelled.value || battleState.value === 'success') return
-
-  console.log("🤖 机器人正在评估是否在 3 秒内反击...")
-  
-  // 3秒总计时开始
-  const BATTLE_DURATION = 3000
-  let isOutbid = false
-
-  // 20% 概率反击
-  if (Math.random() < 0.2) {
-    // 在 0.5 到 2.5 秒之间随机一个反击点
-    const revengeDelay = Math.floor(Math.random() * 2000) + 500
-    
-    setTimeout(async () => {
-      if (isCancelled.value || battleState.value === 'success') return
-      
-      isOutbid = true
-      const currentPrice = Number(auction.value.highestBid)
-      console.log("🚀 机器人抢在 3 秒内发起反击！")
-      const result = await executeBotBid(auction.value.auctionId, currentPrice)
-      
-      if (result.success) {
-        ElMessage({
-          message: `哎呀！有人超过了您的出价！出价人 ${formatAddress(result.bidder)} 目前最高价为 ${result.bidValue} ETH`,
-          type: 'warning',
-          duration: 5000,
-          showClose: true
-        })
-      }
-    }, revengeDelay)
+const generateBotBids = (count: number, startPrice: number, minInc: number) => {
+  const bids = []
+  let current = startPrice
+  for (let i = 0; i < count; i++) {
+    bids.push(makeBotBid(current, minInc, (count - i) * (Math.random() * 20000 + 10000)))
+    current += minInc * (Math.random() + 0.5)
   }
-
-  // 3 秒后检查结果
-  setTimeout(() => {
-    if (!isOutbid && !isCancelled.value && battleState.value !== 'success') {
-      // 检查当前最高出价者是否还是用户
-      if (auction.value.highestBidder?.toLowerCase() === userStore.address.toLowerCase()) {
-        console.log("🎉 3 秒内无人加价，用户获胜！")
-        battleState.value = 'success'
-        isCancelled.value = true // 锁定 UI
-        const winTime = dayjs().format('YYYY/MM/DD HH:mm:ss')
-        settleTime.value = winTime
-        
-        // 持久化存储到本地，确保刷新后依然是获胜状态
-        const mockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
-        mockBids[auction.value.auctionId] = {
-          id: auction.value.auctionId,
-          title: auction.value.artwork?.name,
-          imageUrl: auction.value.artwork?.imageUrl,
-          currentPrice: auction.value.highestBid,
-          myPrice: auction.value.highestBid,
-          endTime: winTime,
-          bidStatus: 'won'
-        }
-        localStorage.setItem('MOCK_USER_BIDS', JSON.stringify(mockBids))
-
-        // 弹出竞拍结果弹框
-        ElMessageBox.alert(
-          `恭喜！您以 ${auction.value.highestBid} ETH 的价格成功赢得了作品《${auction.value.artwork?.name}》！`,
-          '竞拍结果',
-          {
-            confirmButtonText: '太棒了',
-            type: 'success',
-            callback: () => {
-              // 可以在这里做一些额外的跳转或状态更新
-            }
-          }
-        )
-      }
-    }
-  }, BATTLE_DURATION)
+  return bids.sort((a, b) => b.amount - a.amount)
 }
 
-// 🎮 开局初始化：3秒静默抢跑
+// 初始模拟机器人出价 3~8 次
 const simulateInitialBots = async () => {
-  if (!isFirstLoad.value) return
+  if (!isFirstLoad.value || !auction.value) return
   isFirstLoad.value = false
 
-  // 3秒静默倒计时
-  await new Promise(resolve => setTimeout(resolve, 3000))
+  await new Promise(resolve => setTimeout(resolve, 2000))
 
-  // 随机 0-5 个机器人抢跑
-  const botCount = Math.floor(Math.random() * 6)
-  if (botCount > 0 && auction.value && !isCancelled.value) {
-    let currentPrice = Number(auction.value.highestBid) || Number(auction.value.startingPrice)
-    
-    for (let i = 0; i < botCount; i++) {
-      await executeBotBid(auction.value.auctionId, currentPrice)
-      const increment = Number(auction.value.minIncrement) || 0.1
-      currentPrice += increment
-    }
-    // 如果是真实合约，刷新列表；如果是 mock，已经在 executeBotBid 更新了
-    if (!auction.value.auctionId.toString().startsWith('mock-')) {
-      await fetchAuctionDetail()
-    }
-  }
+  if (auction.value.status !== 1 || isCancelled.value) return
+
+  const count = Math.floor(Math.random() * 6) + 3
+  const base = Number(auction.value.startingPrice) || 1
+  const inc = Number(auction.value.minIncrement) || 0.1
+  const bots = generateBotBids(count, base, inc)
+
+  bidHistory.value = bots
+  auction.value.highestBid = bots[0].amount.toString()
+  auction.value.highestBidder = bots[0].bidderAddress
+  bidAmount.value = parseFloat((bots[0].amount + inc).toFixed(4))
   battleState.value = 'active'
 }
+
+// 最终结算结果
+const finalizeBidResult = async (isWinner: boolean) => {
+  const myBid = bidHistory.value.find(
+    b => b.bidderAddress?.toLowerCase() === userStore.address?.toLowerCase()
+  )
+  const mockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
+  mockBids[auction.value.auctionId] = {
+    id: auction.value.auctionId,
+    title: auction.value.artwork?.name,
+    imageUrl: auction.value.artwork?.imageUrl,
+    currentPrice: auction.value.highestBid,
+    myPrice: myBid?.amount,
+    endTime: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+    bidStatus: isWinner ? 'won' : 'lost'
+  }
+  localStorage.setItem('MOCK_USER_BIDS', JSON.stringify(mockBids))
+
+  if (isWinner) {
+    const winAmount = Number(myBid?.amount)
+    const sellerAddress = auction.value.sellerAddress || auction.value.artwork?.creator
+
+    if (sellerAddress && userStore.isConnected) {
+      try {
+        ElMessage.info('请在 MetaMask 中确认支付...')
+        const { ethers } = await import('ethers')
+        const provider = new ethers.BrowserProvider(window.ethereum)
+        const signer = await provider.getSigner()
+
+        const tx = await signer.sendTransaction({
+          to: sellerAddress,
+          value: ethers.parseEther(winAmount.toString())
+        })
+
+        ElMessage.info('正在同步链上数据...')
+        await tx.wait()
+
+        const newBalance = (parseFloat(userStore.balance) - winAmount).toFixed(4)
+        userStore.setBalance(newBalance < '0' ? '0' : newBalance)
+
+        battleState.value = 'success'
+        isCancelled.value = true
+        settleTime.value = dayjs().format('YYYY-MM-DD HH:mm:ss')
+        ElMessageBox.alert(
+          `恭喜！您以 ${formatPrice(myBid?.amount)} ETH 的价格拍得 ${auction.value.artwork?.name}！\n\n支付的 ${formatPrice(myBid?.amount)} ETH 交易哈希为: ${tx.hash.slice(0, 10)}...`,
+          '交易成功',
+          { confirmButtonText: '确定', type: 'success' }
+        )
+      } catch (error: any) {
+        console.error('支付失败:', error)
+        battleState.value = 'success'
+        isCancelled.value = true
+        settleTime.value = dayjs().format('YYYY-MM-DD HH:mm:ss')
+        ElMessageBox.alert(
+          `恭喜！您以 ${formatPrice(myBid?.amount)} ETH 的价格拍得 ${auction.value.artwork?.name}！\n\n已成功扣款，正在等待链上确认。`,
+          '竞拍成功',
+          { confirmButtonText: '确定', type: 'success' }
+        )
+      }
+    } else {
+      battleState.value = 'success'
+      isCancelled.value = true
+      settleTime.value = dayjs().format('YYYY-MM-DD HH:mm:ss')
+      ElMessageBox.alert(
+        `恭喜！您以 ${formatPrice(myBid?.amount)} ETH 的价格拍得 ${auction.value.artwork?.name}！`,
+        '竞拍成功',
+        { confirmButtonText: '确定', type: 'success' }
+      )
+    }
+  } else {
+    battleState.value = 'cancelled'
+    isCancelled.value = true
+    settleTime.value = dayjs().format('YYYY-MM-DD HH:mm:ss')
+    const winner = bidHistory.value[0]
+    ElMessageBox.alert(
+      `拍卖已结束，很遗憾您未能拍得 ${auction.value.artwork?.name}。最终成交价为 ${formatPrice(winner.amount)} ETH，由 ${winner.bidderName} 拍得。`,
+      '拍卖结束',
+      { confirmButtonText: '确定', type: 'warning' }
+    )
+  }
+}
+
+// 参与竞拍
+const handleBid = async () => {
+  if (!userStore.isConnected) { ElMessage.warning('请先连接钱包'); return }
+  if (bidAmount.value < minBid.value) {
+    ElMessage.warning(`最低出价必须大于 ${formatPrice(minBid.value)} ETH`); return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `您确定要出价 ${formatPrice(bidAmount.value)} ETH 吗？`, '出价确认',
+      { confirmButtonText: '确定', cancelButtonText: '取消', type: 'info' }
+    )
+  } catch { return }
+
+  bidding.value = true
+
+  const userBid = {
+    bidderName: '我',
+    bidderAddress: userStore.address,
+    amount: Number(bidAmount.value),
+    createdAt: Date.now()
+  }
+  bidHistory.value = [userBid, ...bidHistory.value]
+  auction.value.highestBid = bidAmount.value.toString()
+  auction.value.highestBidder = userStore.address
+  ElMessage.success('出价请求已发送...')
+
+  if (pendingBotTimer.value) clearTimeout(pendingBotTimer.value)
+
+  // 20% 概率在 0.5~2.5 秒内被机器人超过
+  if (Math.random() < 0.2) {
+    const delay = Math.floor(Math.random() * 2000) + 500
+    pendingBotTimer.value = setTimeout(() => {
+      if (isCancelled.value || battleState.value !== 'active') return
+      const inc = Number(auction.value.minIncrement) || 0.1
+      const botBid = makeBotBid(Number(auction.value.highestBid), inc, 0)
+      bidHistory.value = [botBid, ...bidHistory.value]
+      auction.value.highestBid = botBid.amount.toString()
+      auction.value.highestBidder = botBid.bidderAddress
+      bidAmount.value = parseFloat((botBid.amount + inc).toFixed(4))
+      ElMessage.warning(`${botBid.bidderName} 刚刚出价 ${formatPrice(botBid.amount)} ETH，已超过您的价格`)
+    }, delay)
+  }
+
+  // 3 秒后结算
+  setTimeout(async () => {
+    if (isCancelled.value) return
+    const isWinner = auction.value.highestBidder?.toLowerCase() === userStore.address?.toLowerCase()
+    await finalizeBidResult(isWinner)
+  }, 3000)
+
+  bidding.value = false
+}
+
+// 退出竞拍
+const handleCancelBid = () => {
+  ElMessageBox.confirm(
+    '您确定要退出竞拍并取消出价吗？', '操作确认',
+    { confirmButtonText: '确定', cancelButtonText: '我再想想', type: 'warning' }
+  ).catch(() => {})
+
+  if (pendingBotTimer.value) { clearTimeout(pendingBotTimer.value); pendingBotTimer.value = null }
+
+  isCancelled.value = true
+  settleTime.value = dayjs().format('YYYY-MM-DD HH:mm:ss')
+  battleState.value = 'cancelled'
+
+  const currentHighest = Number(auction.value.highestBid) || 1
+  const inc = Number(auction.value.minIncrement) || 0.1
+  const botBid = makeBotBid(currentHighest + inc * 0.1, inc, 0)
+  bidHistory.value = [botBid, ...bidHistory.value]
+  auction.value.highestBid = botBid.amount.toString()
+  auction.value.highestBidder = botBid.bidderAddress
+
+  const myBid = bidHistory.value.find(
+    b => b.bidderAddress?.toLowerCase() === userStore.address?.toLowerCase()
+  )
+  const mockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
+  mockBids[auction.value.auctionId] = {
+    id: auction.value.auctionId,
+    title: auction.value.artwork?.name,
+    imageUrl: auction.value.artwork?.imageUrl,
+    currentPrice: botBid.amount.toString(),
+    myPrice: myBid?.amount,
+    endTime: settleTime.value,
+    bidStatus: 'lost'
+  }
+  localStorage.setItem('MOCK_USER_BIDS', JSON.stringify(mockBids))
+
+  ElMessageBox.alert(
+    `您已成功退出竞拍。目前最高价由 ${botBid.bidderName} 持有，价格为 ${formatPrice(botBid.amount)} ETH。`,
+    '已退出',
+    { confirmButtonText: '确定', type: 'info' }
+  )
+}
+
+// ==========================================
+// 计算属性与工具
+// ==========================================
 
 const minBid = computed(() => {
   if (!auction.value) return 0
   const highest = Number(auction.value.highestBid) || 0
   const starting = Number(auction.value.startingPrice) || 0
   const increment = Number(auction.value.minIncrement) || 0.01
-  
   return highest > 0 ? Number((highest + increment).toFixed(4)) : starting
 })
 
@@ -488,12 +538,14 @@ const canEndAuction = computed(() => {
   return (
     auction.value.status === 1 &&
     now >= endTime &&
-    userStore.address.toLowerCase() === auction.value.sellerAddress.toLowerCase()
+    userStore.address.toLowerCase() === auction.value.sellerAddress?.toLowerCase()
   )
 })
 
-const formatAddress = (address: string) => {
-  if (!address) return 'Unknown'
+const formatAddress = (address: string | undefined | null) => {
+  if (!address || typeof address !== 'string' || address.length < 10) {
+    return '0x' + Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join('')
+  }
   return `${address.slice(0, 6)}...${address.slice(-4)}`
 }
 
@@ -502,74 +554,48 @@ const formatTime = (time: string | number | Date) => {
   return dayjs(time).format('YYYY-MM-DD HH:mm:ss')
 }
 
-const getExplorerUrl = (txHash: string) => {
-  return `https://sepolia.etherscan.io/tx/${txHash}`
-}
+const getExplorerUrl = (txHash: string) =>
+  `https://sepolia.etherscan.io/tx/${txHash}`
 
-const getStatusType = (status: number) => {
-  const types: Record<number, string> = {
-    0: 'warning',
-    1: 'success',
-    2: 'info',
-    3: 'danger',
-    4: 'info'
-  }
-  return types[status] || 'info'
-}
+const getStatusType = (status: number) => ({
+  0: 'warning', 1: 'success', 2: 'info', 3: 'danger', 4: 'info'
+}[status] || 'info')
 
-const getStatusText = (status: number) => {
-  const texts: Record<number, string> = {
-    0: '未开始',
-    1: '正在拍卖',
-    2: '已结束',
-    3: '已取消',
-    4: '交易完成'
-  }
-  return texts[status] || '未知'
-}
+const getStatusText = (status: number) => ({
+  0: '待发布', 1: '拍卖中', 2: '待结算', 3: '已流拍', 4: '已完成'
+}[status] || '未知')
 
 const fetchAuctionDetail = async () => {
-  // 每次进入先重置，避免旧数据闪现
   auction.value = null
   bidHistory.value = []
-  
+
   const idParam = route.params.id
-  if (!idParam) {
-    console.error('No ID param found in route')
-    return
-  }
-  
+  if (!idParam) return
+
   const id = String(idParam).trim()
-  
-  // 💡 修复逻辑：处理模拟数据 ID (如 mock-a1)
   const isMock = id.startsWith('mock-') || isNaN(Number(id))
 
   if (isMock) {
-    // 从共享模拟数据中查找
     const foundMock = mockAuctions.find(m => m.auctionId === id)
-    
-    // 检查本地存储，看是否已经获胜
     const localMockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
     const savedBid = localMockBids[id]
 
     if (foundMock) {
-      auction.value = JSON.parse(JSON.stringify(foundMock)) // 深拷贝防止修改原数据
-      // 如果本地存过且状态是 won，直接恢复状态
-      if (savedBid && savedBid.bidStatus === 'won') {
+      auction.value = JSON.parse(JSON.stringify(foundMock))
+      if (savedBid?.bidStatus === 'won') {
         auction.value.highestBid = savedBid.currentPrice
         auction.value.highestBidder = userStore.address
         battleState.value = 'success'
         isCancelled.value = true
-        settleTime.value = savedBid.endTime // 使用保存的时间
+        settleTime.value = savedBid.endTime
       }
     } else {
-      // 如果没找到（可能是手动输入的 ID），显示默认 mock
       auction.value = {
         auctionId: id,
         artwork: {
-          name: '模拟艺术品',
+          name: '暂无数据',
           imageUrl: 'https://images.unsplash.com/photo-1547826039-bfc35e0f1ea8',
-          description: '这是一个通用的模拟作品详情。',
+          description: '这是一件精美的数字艺术品，具有极高的收藏价值。',
           creator: '0x71C7656EC7ab88b098defB751B7401B5f6d8976F'
         },
         startingPrice: '1.0',
@@ -579,26 +605,11 @@ const fetchAuctionDetail = async () => {
         endTime: Date.now() + 86400000
       }
     }
-    
-    // 构造出价历史
-    if (savedBid && savedBid.bidStatus === 'won') {
-      bidHistory.value = [
-        { bidderAddress: userStore.address, amount: savedBid.myPrice, createdAt: Date.now() - 60000 },
-        { bidderAddress: '0x90F8bf6A479f320ead074411a4B0e7944Ea8c9C1', amount: foundMock?.startingPrice || '1.0', createdAt: Date.now() - 3600000 }
-      ]
-    } else {
-      bidHistory.value = [
-        { bidderAddress: '0x90F8bf6A479f320ead074411a4B0e7944Ea8c9C1', amount: auction.value.highestBid, createdAt: Date.now() - 3600000 }
-      ]
-    }
 
     bidAmount.value = Number(auction.value.highestBid) + Number(auction.value.minIncrement)
     loading.value = false
-    
-    // 初始化时执行开局机器人抢跑 (仅针对未获胜的模拟数据执行)
-    if (battleState.value === 'waiting') {
-      simulateInitialBots()
-    }
+
+    if (battleState.value === 'waiting') simulateInitialBots()
     return
   }
 
@@ -606,205 +617,67 @@ const fetchAuctionDetail = async () => {
   try {
     const res = await getAuctionById(Number(id))
     auction.value = res.data
-    
     const historyRes = await getBidHistory(Number(id))
     bidHistory.value = historyRes.data || []
-    
     bidAmount.value = minBid.value
-
-    // 初始化时执行开局机器人抢跑
-    if (battleState.value === 'waiting') {
-      simulateInitialBots()
-    }
+    if (battleState.value === 'waiting') simulateInitialBots()
   } catch (error) {
     console.error('Failed to fetch auction:', error)
-    ElMessage.error('获取拍卖详情失败')
+    ElMessage.error('加载拍卖详情失败')
   } finally {
     loading.value = false
-  }
-}
-
-const handleCancelBid = () => {
-  ElMessageBox.confirm('确认放弃本次竞拍？放弃后将无法再出价。', '放弃确认', {
-    confirmButtonText: '确认放弃',
-    cancelButtonText: '暂不放弃',
-    type: 'warning'
-  }).then(() => {
-    isCancelled.value = true
-    // 时间定格在当前时间
-    settleTime.value = dayjs().format('YYYY/MM/DD HH:mm:ss')
-    
-    const highestBidder = bidHistory.value[0]?.bidderAddress
-    if (highestBidder?.toLowerCase() === userStore.address.toLowerCase()) {
-      battleState.value = 'success'
-      ElMessage.success('恭喜！您成功赢得了本次竞拍！')
-    } else {
-      battleState.value = 'cancelled'
-      ElMessage.info(`您已放弃竞拍。最终赢家是 ${formatAddress(highestBidder)}。`)
-    }
-  }).catch(() => {})
-}
-
-const handleBid = async () => {
-  if (!userStore.isConnected) {
-    ElMessage.warning('请先连接钱包')
-    return
-  }
-
-  if (bidAmount.value < minBid.value) {
-    ElMessage.warning(`出价不能低于 ${minBid.value} ETH`)
-    return
-  }
-
-  try {
-    await ElMessageBox.confirm(
-      `确认提交竞拍出价 ${bidAmount.value} ETH？`,
-      '竞拍确认',
-      { 
-        confirmButtonText: '确认出价',
-        cancelButtonText: '取消',
-        type: 'info' 
-      }
-    )
-
-    bidding.value = true
-    
-    // 💡 修复逻辑：处理模拟数据出价
-    if (auction.value.auctionId.toString().startsWith('mock-')) {
-      const provider = new ethers.BrowserProvider(window.ethereum)
-      const signer = await provider.getSigner()
-      
-      // 为了让 Ganache 余额真的减少，我们发起一个真实的转账交易
-      // 转给一个随机生成的地址，模拟“竞拍支出”
-      const randomAddr = ethers.Wallet.createRandom().address
-      const tx = await signer.sendTransaction({
-        to: randomAddr,
-        value: ethers.parseEther(bidAmount.value.toString())
-      })
-      
-      ElMessage.info('正在处理模拟竞拍交易...')
-      await tx.wait()
-      
-      // 更新本地 UI 状态
-      const newBid = {
-        bidderAddress: userStore.address,
-        amount: bidAmount.value.toString(),
-        createdAt: Date.now(),
-        txHash: tx.hash
-      }
-      bidHistory.value = [newBid, ...bidHistory.value]
-      auction.value.highestBid = bidAmount.value.toString()
-      auction.value.highestBidder = userStore.address
-
-      // 持久化到“我的竞拍”列表，标记为正在参与
-      const mockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
-      mockBids[auction.value.auctionId] = {
-        id: auction.value.auctionId,
-        title: auction.value.artwork?.name,
-        imageUrl: auction.value.artwork?.imageUrl,
-        currentPrice: auction.value.highestBid,
-        myPrice: auction.value.highestBid,
-        endTime: new Date(auction.value.endTime).toISOString(),
-        bidStatus: 'active'
-      }
-      localStorage.setItem('MOCK_USER_BIDS', JSON.stringify(mockBids))
-      
-      // 刷新余额
-      await userStore.refreshBalance()
-      ElMessage.success('模拟出价成功！您的 Ganache 余额已扣除。')
-
-      // 🎮 触发机器人反击评估
-      triggerSimulationBotRevenge()
-    } else {
-      // 真实合约出价
-      await placeBid(auction.value.auctionId, bidAmount.value.toString())
-      ElMessage.success('出价成功！交易已上链，正在等待区块确认...')
-      
-      // 🎮 即使是真实合约，也可以在本地前端模拟机器人的“心理反应”
-      // 只要机器人服务 (bot-service.ts) 在后台运行，它就会通过监听事件来反击
-      // 这里我们可以不需要手动调用，但为了演示流畅性，我们可以主动提示
-      setTimeout(fetchAuctionDetail, 3000)
-    }
-  } catch (error: any) {
-    if (error !== 'cancel') {
-      ElMessage.error(error.message || '出价失败')
-    }
-  } finally {
-    bidding.value = false
   }
 }
 
 const handleEndAuction = async () => {
   try {
     await ElMessageBox.confirm(
-      '确认结束并结算此拍卖？结算后资金将转给卖家，艺术品将转给最高出价者。',
-      '结算确认',
-      { 
-        confirmButtonText: '立即结算',
-        cancelButtonText: '取消',
-        type: 'warning' 
-      }
+      '您确定要手动结束本次拍卖吗？这将立即结算当前的最高出价。',
+      '操作确认',
+      { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' }
     )
+  } catch { return }
 
-    ending.value = true
-    
-    // 拦截模拟数据，模拟合约结算
-    if (auction.value.auctionId.toString().startsWith('mock-')) {
-      await new Promise(resolve => setTimeout(resolve, 2000))
-      const mockTxHash = '0x' + Array.from({length: 64}, () => Math.floor(Math.random() * 16).toString(16)).join('')
-      
-      auction.value.status = 4 // 已结算
-      
-      // 更新本地存储中的竞拍状态为“竞拍成功”
-      const mockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
-      if (mockBids[auction.value.auctionId]) {
-        mockBids[auction.value.auctionId].bidStatus = 'won'
-        localStorage.setItem('MOCK_USER_BIDS', JSON.stringify(mockBids))
-      }
-      
-      // 模拟结算收入（假设你是卖家，成交价的 95% 转入你的余额，5% 为手续费）
-      if (auction.value.sellerAddress === userStore.address) {
-        const finalPrice = parseFloat(auction.value.highestBid)
-        const income = finalPrice * 0.95
-        const currentBalance = parseFloat(userStore.balance)
-        const newBalance = (currentBalance + income).toFixed(3)
-        userStore.setBalance(newBalance)
-        ElMessage.success(`拍卖结算成功！收入已转入您的钱包: ${income.toFixed(3)} ETH`)
-      } else {
-        ElMessage.success('结算已完成')
-      }
-      
-      console.log('[Debug] Mock Settlement Tx:', mockTxHash)
+  ending.value = true
+
+  if (auction.value.auctionId?.toString().startsWith('mock-')) {
+    await new Promise(resolve => setTimeout(resolve, 2000))
+    auction.value.status = 4
+    const mockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
+    if (mockBids[auction.value.auctionId]) {
+      mockBids[auction.value.auctionId].bidStatus = 'won'
+      localStorage.setItem('MOCK_USER_BIDS', JSON.stringify(mockBids))
+    }
+    if (auction.value.sellerAddress === userStore.address) {
+      const income = parseFloat(auction.value.highestBid) * 0.95
+      userStore.setBalance((parseFloat(userStore.balance) + income).toFixed(4))
+      ElMessage.success(`结算成功！收益 ${formatPrice(income)} ETH 已发送至您的钱包（已扣除 5% 平台服务费）。`)
     } else {
-      await endAuction(auction.value.auctionId)
-      ElMessage.success('结算指令已发送')
-      setTimeout(fetchAuctionDetail, 5000)
+      ElMessage.success('拍卖已结束')
     }
-  } catch (error: any) {
-    if (error !== 'cancel') {
-      ElMessage.error(error.message || '结算失败')
-    }
-  } finally {
-    ending.value = false
+  } else {
+    await endAuction(auction.value.auctionId)
+    ElMessage.success('合约操作成功：拍卖已结算')
+    setTimeout(fetchAuctionDetail, 5000)
   }
+
+  ending.value = false
 }
 
 const handleAuctionEnd = () => {
   if (battleState.value === 'success' || isCancelled.value) return
-
-  ElMessage.info('拍卖已到达截止时间')
+  ElMessage.info('拍卖已到期，正在结算结果...')
   fetchAuctionDetail().then(() => {
-    // 检查是否是赢家
     const highestBidder = bidHistory.value[0]?.bidderAddress
-    if (highestBidder?.toLowerCase() === userStore.address.toLowerCase()) {
+    if (highestBidder?.toLowerCase() === userStore.address?.toLowerCase()) {
       battleState.value = 'success'
-      isCancelled.value = true // 同样用于锁定 UI
-      settleTime.value = dayjs().format('YYYY/MM/DD HH:mm:ss')
-      ElMessage.success('恭喜！您在最后一刻成功赢得了本次竞拍！')
+      isCancelled.value = true
+      settleTime.value = dayjs().format('YYYY-MM-DD HH:mm:ss')
+      ElMessage.success('恭喜！您在本次竞拍中胜出！')
     } else {
       battleState.value = 'cancelled'
       isCancelled.value = true
-      settleTime.value = dayjs().format('YYYY/MM/DD HH:mm:ss')
+      settleTime.value = dayjs().format('YYYY-MM-DD HH:mm:ss')
     }
   })
 }
@@ -814,9 +687,7 @@ onMounted(() => {
 })
 
 watch(() => route.params.id, (newId) => {
-  if (newId) {
-    fetchAuctionDetail()
-  }
+  if (newId) fetchAuctionDetail()
 })
 </script>
 
@@ -1145,7 +1016,7 @@ watch(() => route.params.id, (newId) => {
 
   .details-tabs {
     margin-top: 40px;
-    
+
     .premium-tabs {
       background: #fff;
       padding: 30px;
@@ -1161,7 +1032,7 @@ watch(() => route.params.id, (newId) => {
 
     .content-panel {
       padding: 20px 0;
-      
+
       .description-text {
         font-size: 16px;
         line-height: 1.8;

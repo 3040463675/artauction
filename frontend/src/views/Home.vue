@@ -47,7 +47,7 @@
           </el-col>
           <el-col :span="6">
             <div class="stat-card">
-              <div class="stat-value">{{ stats.totalVolume }} ETH</div>
+              <div class="stat-value">{{ formatPrice(stats.totalVolume) }} ETH</div>
               <div class="stat-label">交易额</div>
             </div>
           </el-col>
@@ -67,7 +67,7 @@
 
         <el-row :gutter="24" v-loading="loading">
           <el-col :xs="24" :sm="12" :md="8" :lg="6" v-for="auction in hotAuctions" :key="auction.auctionId">
-            <AuctionCard :auction="auction" @click="goToDetail(auction)" />
+            <AuctionCard :auction="auction" :show-countdown="true" @click="goToDetail(auction)" />
           </el-col>
         </el-row>
 
@@ -130,6 +130,7 @@ import { useUserStore } from '@/stores/user'
 import { getHotAuctions, getEndingSoonAuctions } from '@/api/auction'
 import AuctionCard from '@/components/AuctionCard.vue'
 import { mockAuctions } from '@/utils/mockData'
+import { formatPrice } from '@/utils/format'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -191,7 +192,8 @@ const fetchEndingSoonAuctions = async () => {
 }
 
 const goToDetail = (auction: any) => {
-  router.push(`/auction/${auction.auctionId}`)
+  const id = auction.id || auction.auctionId
+  router.push(`/auction/${id}`)
 }
 
 const handleCreate = () => {

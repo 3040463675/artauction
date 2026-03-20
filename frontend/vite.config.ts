@@ -23,6 +23,9 @@ export default defineConfig({
       '@': resolve(__dirname, 'src')
     }
   },
+  esbuild: {
+    charset: 'utf8'
+  },
   server: {
     port: 3000,
     proxy: {
