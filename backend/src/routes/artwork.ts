@@ -6,7 +6,8 @@ import {
   getArtworksByOwner,
   createArtwork,
   updateArtwork,
-  verifyArtwork
+  verifyArtwork,
+  deleteArtwork
 } from '../controllers/artworkController'
 import { authMiddleware, roleMiddleware } from '../middleware/auth'
 
@@ -31,6 +32,9 @@ router.post('/', authMiddleware, [
 
 // 更新艺术品
 router.put('/:id', authMiddleware, updateArtwork)
+
+// 删除艺术品
+router.delete('/:id', authMiddleware, deleteArtwork)
 
 // 验证艺术品（拍卖行权限）
 router.post('/:id/verify', authMiddleware, roleMiddleware('auction_house', 'admin'), verifyArtwork)

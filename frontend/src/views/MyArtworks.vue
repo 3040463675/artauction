@@ -24,11 +24,23 @@
         <template v-if="filteredArtworks.length > 0">
           <el-row :gutter="24">
             <el-col :xs="24" :sm="12" :md="8" :lg="6" v-for="item in filteredArtworks" :key="item.id">
-              <AuctionCard 
-                :auction="item" 
-                :show-countdown="item.status === 1" 
-                @click="viewDetail(item)"
-              />
+              <div class="artwork-card-wrapper">
+                <AuctionCard 
+                  :auction="item" 
+                  :show-countdown="item.status === 1" 
+                  @click="viewDetail(item)"
+                />
+                <div class="card-actions">
+                  <el-button 
+                    type="danger" 
+                    :icon="Delete" 
+                    circle 
+                    size="small"
+                    @click.stop="handleDelete(item)"
+                    title="删除作品"
+                  />
+                </div>
+              </div>
             </el-col>
           </el-row>
         </template>
@@ -43,8 +55,10 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, Delete } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { getMyAuctions } from '@/api/auction'
+import { deleteArtwork } from '@/api/artwork'
 import { useUserStore } from '@/stores/user'
 import type { Auction } from '@/types'
 import { mockAuctions } from '@/utils/mockData'
@@ -115,6 +129,40 @@ const viewDetail = (item: Auction) => {
   router.push({ name: 'AuctionDetail', params: { id: targetId } })
 }
 
+const handleDelete = async (item: any) => {
+  try {
+    await ElMessageBox.confirm(
+      '确定要删除这件艺术品吗？删除后不可恢复。',
+      '确认删除',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    const id = item.id || item.auctionId
+    
+    // 1. 如果是数据库中的数字ID，调用后端删除
+    if (!String(id).startsWith('mock-')) {
+      await deleteArtwork(id)
+    }
+
+    // 2. 从本地缓存中删除
+    const localCreated = JSON.parse(localStorage.getItem('MOCK_CREATED_AUCTIONS') || '[]')
+    const updatedLocal = localCreated.filter((a: any) => (a.id || a.auctionId) !== id)
+    localStorage.setItem('MOCK_CREATED_AUCTIONS', JSON.stringify(updatedLocal))
+
+    // 3. 刷新列表
+    ElMessage.success('作品已删除')
+    fetchMyArtworks()
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(error.message || '删除失败')
+    }
+  }
+}
+
 onMounted(() => {
   fetchMyArtworks()
 })
@@ -160,6 +208,26 @@ onMounted(() => {
 
 .artworks-grid {
   min-height: 400px;
+
+  .artwork-card-wrapper {
+    position: relative;
+    margin-bottom: 24px;
+
+    .card-actions {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      z-index: 10;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    &:hover {
+      .card-actions {
+        opacity: 1;
+      }
+    }
+  }
 }
 
 .artwork-card {

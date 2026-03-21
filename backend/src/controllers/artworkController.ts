@@ -186,3 +186,29 @@ export const verifyArtwork = async (req: Request, res: Response, next: NextFunct
     next(error)
   }
 }
+
+// 删除艺术品
+export const deleteArtwork = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params
+    if (!req.user) throw new AppError('未授权', -1, 401)
+
+    const artwork = await Artwork.findByPk(id)
+    if (!artwork) throw new AppError('艺术品不存在', -1, 404)
+
+    // 只能删除自己的作品
+    if (artwork.ownerAddress.toLowerCase() !== req.user.address.toLowerCase()) {
+      throw new AppError('您无权删除此作品', -1, 403)
+    }
+
+    // 如果正在拍卖中，不允许删除
+    if (artwork.isOnAuction) {
+      throw new AppError('该作品正在拍卖中，无法删除', -1, 400)
+    }
+
+    await artwork.destroy()
+    res.success(null, '删除成功')
+  } catch (error) {
+    next(error)
+  }
+}

@@ -42,3 +42,8 @@ export const createArtwork = (data: Partial<Artwork>) => {
 export const updateArtwork = (id: number, data: Partial<Artwork>) => {
   return request.put<ApiResponse<Artwork>>(`/artworks/${id}`, data)
 }
+
+// 删除艺术品
+export const deleteArtwork = (id: number | string) => {
+  return request.delete<ApiResponse<null>>(`/artworks/${id}`)
+}
