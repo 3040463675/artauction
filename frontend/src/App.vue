@@ -1,8 +1,8 @@
 <template>
   <el-config-provider :locale="zhCn">
     <div class="app-container">
-      <!-- 顶部导航 -->
-      <header class="app-header">
+      <!-- 顶部导航 - 在非管理后台页面显示 -->
+      <header v-if="!$route.path.startsWith('/admin')" class="app-header">
         <div class="header-content">
           <div class="logo" @click="$router.push('/')">
             <div class="logo-icon-wrapper">
@@ -60,6 +60,9 @@
                   <el-dropdown-item @click="$router.push('/profile')">
                     个人中心
                   </el-dropdown-item>
+                  <el-dropdown-item @click="handleSwitchRole">
+                    切换身份 (当前: {{ roleName }})
+                  </el-dropdown-item>
                   <el-dropdown-item divided @click="logout">
                     退出登录
                   </el-dropdown-item>
@@ -79,23 +82,130 @@
         </router-view>
       </main>
 
-      <!-- 页脚 -->
-      <footer class="app-footer">
+      <!-- 页脚 - 在非管理后台页面显示 -->
+      <footer v-if="!$route.path.startsWith('/admin')" class="app-footer">
         <p>&copy; 2024 ArtChain - 基于区块链的艺术品竞拍系统</p>
       </footer>
+
+      <!-- 管理员认证弹窗 -->
+      <el-dialog
+        v-model="adminAuthVisible"
+        title="管理员身份认证"
+        width="400px"
+        center
+        append-to-body
+        destroy-on-close
+      >
+        <el-form :model="adminForm" label-position="top">
+          <el-form-item label="管理员 ID">
+            <el-input v-model="adminForm.id" placeholder="请输入管理员ID" />
+          </el-form-item>
+          <el-form-item label="认证密码">
+            <el-input 
+              v-model="adminForm.password" 
+              type="password" 
+              placeholder="请输入认证密码" 
+              show-password 
+              @keyup.enter="submitAdminAuth"
+            />
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <div class="dialog-footer">
+            <el-button @click="adminAuthVisible = false">取消</el-button>
+            <el-button type="primary" @click="submitAdminAuth" :loading="authLoading">
+              认证并切换
+            </el-button>
+          </div>
+        </template>
+      </el-dialog>
     </div>
   </el-config-provider>
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { onMounted, computed, ref, reactive } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import { useUserStore } from '@/stores/user'
 import { connectWallet as connect, disconnectWallet as disconnect } from '@/utils/wallet'
 import { formatPrice } from '@/utils/format'
 
 const userStore = useUserStore()
+const router = useRouter()
+
+// 管理员认证相关状态
+const adminAuthVisible = ref(false)
+const authLoading = ref(false)
+const adminForm = reactive({
+  id: '',
+  password: ''
+})
+
+const roleName = computed(() => {
+  const roles = {
+    admin: '管理员',
+    auction_house: '拍卖行',
+    seller: '艺术家',
+    buyer: '竞买人'
+  }
+  return roles[userStore.role] || '用户'
+})
+
+const handleSwitchRole = () => {
+  ElMessageBox.prompt('请输入要切换的角色代码 (admin, seller, buyer, auction_house)', '切换身份', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    inputValue: userStore.role,
+    inputPattern: /^(admin|seller|buyer|auction_house)$/,
+    inputErrorMessage: '角色代码无效'
+  }).then(({ value }: any) => {
+    // 如果切换到管理员，需要额外认证
+    if (value === 'admin') {
+      adminForm.id = ''
+      adminForm.password = ''
+      adminAuthVisible.value = true
+      return
+    }
+
+    // 其他身份直接切换
+    userStore.setRole(value)
+    ElMessage.success(`已切换身份为: ${value === 'buyer' ? '竞买人' : value}`)
+    
+    // 如果当前在管理页面但切换到了非管理员身份，跳转回首页
+    if (router.currentRoute.value.path.startsWith('/admin') && value !== 'admin') {
+      router.push('/')
+    } else {
+      // 否则刷新当前页面以更新状态
+      setTimeout(() => window.location.reload(), 100)
+    }
+  }).catch(() => {})
+}
+
+// 提交管理员认证
+const submitAdminAuth = () => {
+  if (!adminForm.id || !adminForm.password) {
+    ElMessage.warning('请填写完整的认证信息')
+    return
+  }
+
+  authLoading.value = true
+  
+  // 模拟后端认证逻辑
+  setTimeout(() => {
+    // 演示账号：ID 为 admin，密码为 admin888
+    if (adminForm.id === 'admin' && adminForm.password === 'admin888') {
+      userStore.setRole('admin')
+      ElMessage.success('管理员身份认证成功')
+      adminAuthVisible.value = false
+      // 认证成功后直接跳转到管理后台首页
+      router.push('/admin/dashboard')
+    } else {
+      ElMessage.error('管理员 ID 或密码错误')
+    }
+    authLoading.value = false
+  }, 800)
+}
 
 // 格式化地址显示
 const formatAddress = (address: any) => {

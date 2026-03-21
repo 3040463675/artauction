@@ -34,6 +34,35 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '竞拍失败详情', requiresAuth: true }
   },
   {
+    path: '/admin',
+    component: () => import('@/views/AdminLayout.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true },
+    children: [
+      {
+        path: '',
+        redirect: '/admin/dashboard'
+      },
+      {
+        path: 'dashboard',
+        name: 'AdminDashboard',
+        component: () => import('@/views/AdminDashboard.vue'),
+        meta: { title: '数据概览' }
+      },
+      {
+        path: 'users',
+        name: 'AdminUsers',
+        component: () => import('@/views/AdminDashboard.vue'), // 暂时占位
+        meta: { title: '用户管理' }
+      },
+      {
+        path: 'artworks',
+        name: 'AdminArtworks',
+        component: () => import('@/views/AdminDashboard.vue'), // 暂时占位
+        meta: { title: '作品审核' }
+      }
+    ]
+  },
+  {
     path: '/create',
     name: 'CreateArtwork',
     component: () => import('@/views/CreateArtwork.vue'),
@@ -89,6 +118,16 @@ router.beforeEach((to: RouteLocationNormalized, _from: RouteLocationNormalized, 
     const userStore = useUserStore()
     if (!userStore.isConnected) {
       next({ name: 'Home', query: { redirect: to.fullPath } })
+      return
+    }
+  }
+
+  // 检查是否需要管理员权限
+  if (to.meta.requiresAdmin) {
+    const userStore = useUserStore()
+    if (userStore.role !== 'admin') {
+      ElMessage.error('权限不足，仅限管理员访问')
+      next({ name: 'Home' })
       return
     }
   }
