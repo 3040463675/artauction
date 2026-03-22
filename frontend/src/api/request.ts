@@ -20,8 +20,12 @@ service.interceptors.request.use(
     if (persistedUser) {
       try {
         const user = JSON.parse(persistedUser)
-        if (user?.role) {
-          config.headers['x-user-role'] = user.role
+        const state = user?.state || user
+        if (state?.role) {
+          config.headers['x-user-role'] = state.role
+        }
+        if (state?.address) {
+          config.headers['x-user-address'] = state.address
         }
       } catch {
       }

@@ -72,9 +72,21 @@ import {
 const router = useRouter()
 const userStore = useUserStore()
 
-const handleLogout = () => {
+const handleLogout = async () => {
   userStore.setRole('buyer')
-  ElMessage.success('已退出管理员模式')
+
+  if (!userStore.address) {
+    ElMessage.warning('已退出管理员模式，请先连接钱包完成竞买人认证')
+    router.push('/')
+    return
+  }
+
+  await userStore.refreshBalance()
+  ElMessage.success({
+    message: '竞买人身份认证成功',
+    duration: 2000,
+    grouping: true
+  })
   router.push('/')
 }
 </script>

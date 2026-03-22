@@ -41,7 +41,7 @@
           <template #default="{ row }">
             <div class="creator-info">
               <el-avatar :size="24" :src="row.creator?.avatar" />
-              <span class="username">{{ row.creator?.username || '未知用户' }}</span>
+              <span class="username">{{ getPublisherDisplay(row) }}</span>
             </div>
           </template>
         </el-table-column>
@@ -171,7 +171,6 @@ import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Picture } from '@element-plus/icons-vue'
 import { getArtworks, deleteArtwork, verifyArtwork, rejectArtwork } from '@/api/artwork'
-import { request } from '@/api/request'
 import dayjs from 'dayjs'
 
 const loading = ref(false)
@@ -296,6 +295,10 @@ const handleDelete = async (row: any) => {
 const viewDetail = (row: any) => {
   selectedArtwork.value = row
   detailVisible.value = true
+}
+
+const getPublisherDisplay = (row: any) => {
+  return row.ownerAddress || row.creator?.address || row.creator?.username || '未知用户'
 }
 
 const formatDate = (date: string) => {

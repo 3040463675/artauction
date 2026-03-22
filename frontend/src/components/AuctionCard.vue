@@ -20,8 +20,8 @@
       
       <div class="card-info-row">
         <div class="price-box">
-          <span class="label">{{ isEnded ? '最终成交价' : '当前价格' }}</span>
-          <span class="value">{{ formatPrice(auction.highestBid || auction.startingPrice) }} ETH</span>
+          <span class="label">起拍价</span>
+          <span class="value">{{ formatPrice(auction.startingPrice ?? auction.highestBid ?? '0') }} ETH</span>
         </div>
         
         <div class="status-box">

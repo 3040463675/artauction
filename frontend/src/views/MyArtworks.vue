@@ -15,8 +15,9 @@
       <div class="filter-section">
         <el-radio-group v-model="statusFilter" size="large">
           <el-radio-button value="all">全部</el-radio-button>
+          <el-radio-button value="pending">待审核</el-radio-button>
+          <el-radio-button value="ready">可拍卖</el-radio-button>
           <el-radio-button value="auctioning">拍卖中</el-radio-button>
-          <el-radio-button value="ended">已结束</el-radio-button>
         </el-radio-group>
       </div>
 
@@ -25,17 +26,28 @@
           <el-row :gutter="24">
             <el-col :xs="24" :sm="12" :md="8" :lg="6" v-for="item in filteredArtworks" :key="item.id">
               <div class="artwork-card-wrapper">
-                <AuctionCard 
-                  :auction="item" 
-                  :show-countdown="item.status === 1" 
-                  @click="viewDetail(item)"
-                />
+                <el-card class="artwork-card clickable" shadow="hover" @click="viewDetail(item)">
+                  <div class="image-wrapper">
+                    <el-image :src="item.imageUrl" fit="cover" class="artwork-image" />
+                    <el-tag class="status-badge" :type="getStatusTagType(item)">
+                      {{ getStatusText(item) }}
+                    </el-tag>
+                  </div>
+                  <div class="card-content">
+                    <h3 class="title">{{ item.name }}</h3>
+                    <p class="desc">{{ item.description || '暂无描述' }}</p>
+                    <div class="meta-row">
+                      <span class="token">#{{ item.tokenId }}</span>
+                    </div>
+                  </div>
+                </el-card>
                 <div class="card-actions">
                   <el-button 
                     type="danger" 
                     :icon="Delete" 
                     circle 
                     size="small"
+                    :disabled="item.isOnAuction"
                     @click.stop="handleDelete(item)"
                     title="删除作品"
                   />
@@ -57,40 +69,47 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { Plus, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getMyAuctions } from '@/api/auction'
-import { deleteArtwork } from '@/api/artwork'
+import { getArtworksByOwner, deleteArtwork } from '@/api/artwork'
 import { useUserStore } from '@/stores/user'
-import type { Auction } from '@/types'
-import { mockAuctions } from '@/utils/mockData'
-import AuctionCard from '@/components/AuctionCard.vue'
+
+interface MyArtworkItem {
+  id?: string | number
+  tokenId: number | string
+  name: string
+  description: string
+  imageUrl: string
+  isVerified: boolean
+  isOnAuction: boolean
+  auctions?: Array<{
+    id?: number
+    auctionId?: number
+    createdAt?: string | number
+  }>
+}
 
 const router = useRouter()
 const userStore = useUserStore()
 const loading = ref(false)
-const artworks = ref<Auction[]>([])
+const artworks = ref<MyArtworkItem[]>([])
 const statusFilter = ref('all')
+
+const getStatusKey = (item: MyArtworkItem) => {
+  if (!item.isVerified) return 'pending'
+  if (item.isOnAuction) return 'auctioning'
+  return 'ready'
+}
 
 const filteredArtworks = computed(() => {
   if (statusFilter.value === 'all') return artworks.value
-  const statusMap: Record<string, number> = {
-    'auctioning': 1,
-    'ended': 4 // 4 代表已结算/已完成
-  }
-  return artworks.value.filter(item => {
-    if (statusFilter.value === 'ended') {
-      return item.status === 4 || item.status === 2 || item.status === 3
-    }
-    return item.status === statusMap[statusFilter.value]
-  })
+  return artworks.value.filter(item => getStatusKey(item) === statusFilter.value)
 })
 
 const fetchMyArtworks = async () => {
   if (!userStore.address) return
   loading.value = true
   try {
-    const res = await getMyAuctions(userStore.address)
-    // 100% 数据库同步：仅使用后端 API 返回的数据
-    artworks.value = res.data || []
+    const res = await getArtworksByOwner(userStore.address)
+    artworks.value = (res.data || []) as MyArtworkItem[]
   } catch (error) {
     console.error('Failed to fetch my artworks:', error)
     artworks.value = []
@@ -103,13 +122,40 @@ const goToCreate = () => {
   router.push({ name: 'CreateArtwork' })
 }
 
-const viewDetail = (item: Auction) => {
-  // 优先跳转到 auctionId (例如 'mock-a1')，如果没有则用数字 id
-  const targetId = item.auctionId || item.id
+const viewDetail = (item: MyArtworkItem) => {
+  const latestAuction = (item.auctions || []).slice().sort((a, b) =>
+    new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+  )[0]
+
+  const targetId = latestAuction?.auctionId || latestAuction?.id
+  if (!targetId) {
+    ElMessage.info('该作品暂未生成拍卖详情，请先完成审核')
+    return
+  }
+
   router.push({ name: 'AuctionDetail', params: { id: targetId } })
 }
 
-const handleDelete = async (item: any) => {
+const getStatusText = (item: MyArtworkItem) => {
+  const key = getStatusKey(item)
+  if (key === 'pending') return '待审核'
+  if (key === 'ready') return '可拍卖'
+  return '拍卖中'
+}
+
+const getStatusTagType = (item: MyArtworkItem) => {
+  const key = getStatusKey(item)
+  if (key === 'pending') return 'warning'
+  if (key === 'ready') return 'success'
+  return 'danger'
+}
+
+const handleDelete = async (item: MyArtworkItem) => {
+  if (item.isOnAuction) {
+    ElMessage.warning('拍卖中的作品不能删除')
+    return
+  }
+
   try {
     await ElMessageBox.confirm(
       '确定要删除这件艺术品吗？删除后不可恢复。',
@@ -122,6 +168,10 @@ const handleDelete = async (item: any) => {
     )
 
     const id = item.id
+    if (!id) {
+      ElMessage.error('无法定位作品ID')
+      return
+    }
     
     // 调用后端删除
     await deleteArtwork(id)
@@ -209,6 +259,7 @@ onMounted(() => {
   overflow: hidden;
   margin-bottom: 24px;
   transition: all 0.3s;
+  cursor: pointer;
 
   &:hover {
     transform: translateY(-8px);

@@ -10,18 +10,18 @@ import {
   rejectArtwork,
   deleteArtwork
 } from '../controllers/artworkController'
-import { authMiddleware, roleMiddleware } from '../middleware/auth'
+import { authMiddleware, optionalAuth, roleMiddleware } from '../middleware/auth'
 
 const router = Router()
 
 // 获取艺术品列表
 router.get('/', getArtworks)
 
-// 获取艺术品详情
-router.get('/:id', getArtworkById)
-
 // 获取用户的艺术品
 router.get('/owner', getArtworksByOwner)
+
+// 获取艺术品详情
+router.get('/:id', getArtworkById)
 
 // 创建艺术品记录
 router.post('/', authMiddleware, [
@@ -38,9 +38,9 @@ router.put('/:id', authMiddleware, updateArtwork)
 router.delete('/:id', authMiddleware, deleteArtwork)
 
 // 验证艺术品（拍卖行/管理员权限）
-router.post('/:id/verify', authMiddleware, roleMiddleware('auction_house', 'admin'), verifyArtwork)
+router.post('/:id/verify', optionalAuth, roleMiddleware('auction_house', 'admin'), verifyArtwork)
 
 // 驳回并删除艺术品（仅管理员权限）
-router.post('/:id/reject', authMiddleware, roleMiddleware('admin'), rejectArtwork)
+router.post('/:id/reject', optionalAuth, roleMiddleware('admin'), rejectArtwork)
 
 export default router

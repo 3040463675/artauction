@@ -19,10 +19,13 @@ export interface Artwork {
   description: string
   imageUrl: string
   ipfsHash?: string
+  categoryId?: number
+  metadata?: Record<string, any>
   createdAt?: number | string
   isVerified: boolean
   isOnAuction?: boolean
   owner?: string
+  ownerAddress?: string
 }
 
 // 拍卖信息

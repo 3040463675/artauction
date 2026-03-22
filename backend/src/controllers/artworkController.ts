@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
 import { Op } from 'sequelize'
-import { Artwork, User, Category, Auction } from '../models'
+import { Artwork, User, Category, Auction, AuctionStatus } from '../models'
 import { AppError } from '../middleware/error'
 
 // 获取艺术品列表
@@ -98,7 +98,8 @@ export const getArtworksByOwner = async (req: Request, res: Response, next: Next
     const artworks = await Artwork.findAll({
       where: { ownerAddress: address },
       include: [
-        { model: User, as: 'creator', attributes: ['id', 'address', 'username', 'avatar'] }
+        { model: User, as: 'creator', attributes: ['id', 'address', 'username', 'avatar'] },
+        { model: Auction, as: 'auctions', required: false, attributes: ['id', 'auctionId', 'status', 'createdAt'] }
       ],
       order: [['createdAt', 'DESC']]
     })
@@ -180,7 +181,66 @@ export const verifyArtwork = async (req: Request, res: Response, next: NextFunct
       throw new AppError('艺术品不存在', -1, 404)
     }
 
-    await artwork.update({ isVerified })
+    const metadata = artwork.metadata && typeof artwork.metadata === 'object' ? artwork.metadata as any : {}
+    const startingPriceNum = Number(metadata.startingPrice)
+    const minIncrementNum = Number(metadata.minIncrement)
+    const startingPrice = (Number.isFinite(startingPriceNum) && startingPriceNum > 0 ? startingPriceNum : 0.1).toString()
+    const minIncrement = (Number.isFinite(minIncrementNum) && minIncrementNum > 0 ? minIncrementNum : 0.01).toString()
+
+    if (isVerified) {
+      const activeAuction = await Auction.findOne({
+        where: {
+          artworkId: artwork.id,
+          status: { [Op.in]: [AuctionStatus.Pending, AuctionStatus.Active] }
+        }
+      })
+
+      if (!activeAuction) {
+        const latestAuction = await Auction.findOne({
+          attributes: ['auctionId'],
+          order: [['auctionId', 'DESC']]
+        })
+        const nextAuctionId = (Number(latestAuction?.auctionId) || 0) + 1
+        const startTime = new Date()
+        const endTime = new Date(startTime.getTime() + 3 * 24 * 60 * 60 * 1000)
+
+        await Auction.create({
+          auctionId: nextAuctionId,
+          artworkId: artwork.id,
+          sellerAddress: artwork.ownerAddress,
+          startingPrice,
+          reservePrice: '0',
+          minIncrement,
+          startTime,
+          endTime,
+          highestBid: '0',
+          status: AuctionStatus.Active
+        })
+      } else if (activeAuction.status === AuctionStatus.Pending) {
+        const startTime = new Date()
+        const endTime = new Date(startTime.getTime() + 3 * 24 * 60 * 60 * 1000)
+        await activeAuction.update({
+          status: AuctionStatus.Active,
+          startingPrice,
+          minIncrement,
+          startTime,
+          endTime
+        })
+      }
+
+      await artwork.update({ isVerified: true, isOnAuction: true })
+    } else {
+      await artwork.update({ isVerified: false, isOnAuction: false })
+      await Auction.update(
+        { status: AuctionStatus.Cancelled },
+        {
+          where: {
+            artworkId: artwork.id,
+            status: { [Op.in]: [AuctionStatus.Pending, AuctionStatus.Active] }
+          }
+        }
+      )
+    }
 
     res.success(artwork)
   } catch (error) {

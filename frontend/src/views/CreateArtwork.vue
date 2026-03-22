@@ -3,7 +3,7 @@
     <div class="container">
       <div class="page-header">
         <h1>发布艺术品</h1>
-        <p>铸造NFT并创建拍卖</p>
+        <p>提交作品审核，审核通过后可上架拍卖</p>
       </div>
 
       <el-form
@@ -69,9 +69,8 @@
 
             <el-card class="form-card">
               <template #header>
-                <span>拍卖设置</span>
+                <span>拍卖参数</span>
               </template>
-
               <el-row :gutter="16">
                 <el-col :span="12">
                   <el-form-item label="起拍价 (ETH)" prop="startingPrice">
@@ -79,29 +78,13 @@
                       v-model="form.startingPrice"
                       :min="0.001"
                       :precision="4"
-                      :step="0.1"
-                      placeholder="0.00"
+                      :step="0.01"
                       style="width: 100%"
                     />
                   </el-form-item>
                 </el-col>
                 <el-col :span="12">
-                  <el-form-item label="保留价 (ETH)" prop="reservePrice">
-                    <el-input-number
-                      v-model="form.reservePrice"
-                      :min="0"
-                      :precision="4"
-                      :step="0.1"
-                      placeholder="0.00 (可选)"
-                      style="width: 100%"
-                    />
-                  </el-form-item>
-                </el-col>
-              </el-row>
-
-              <el-row :gutter="16">
-                <el-col :span="12">
-                  <el-form-item label="最小加价 (ETH)" prop="minIncrement">
+                  <el-form-item label="最低加价 (ETH)" prop="minIncrement">
                     <el-input-number
                       v-model="form.minIncrement"
                       :min="0.001"
@@ -111,18 +94,9 @@
                     />
                   </el-form-item>
                 </el-col>
-                <el-col :span="12">
-                  <el-form-item label="拍卖时长" prop="duration">
-                    <el-select v-model="form.duration" style="width: 100%">
-                      <el-option label="1天" :value="86400" />
-                      <el-option label="3天" :value="259200" />
-                      <el-option label="7天" :value="604800" />
-                      <el-option label="14天" :value="1209600" />
-                    </el-select>
-                  </el-form-item>
-                </el-col>
               </el-row>
             </el-card>
+
           </el-col>
 
           <!-- 右侧：预览和提交 -->
@@ -148,7 +122,11 @@
 
                 <div class="preview-price">
                   <span class="label">起拍价</span>
-                  <span class="value">{{ formatPrice(form.startingPrice) }} ETH</span>
+                  <span class="value">{{ form.startingPrice }} ETH</span>
+                </div>
+                <div class="preview-price">
+                  <span class="label">最低加价</span>
+                  <span class="value">{{ form.minIncrement }} ETH</span>
                 </div>
               </div>
 
@@ -159,7 +137,7 @@
                 :loading="submitting"
                 @click="handleSubmit"
               >
-                发布并创建拍卖
+                提交审核
               </el-button>
             </el-card>
           </el-col>
@@ -175,10 +153,8 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules, UploadProps } from 'element-plus'
 import { useUserStore } from '@/stores/user'
-import { mintArt, createAuction } from '@/utils/contracts'
-import { uploadArtworkImage, createArtwork as apiCreateArtwork } from '@/api/artwork'
-import { createAuction as apiCreateAuction } from '@/api/auction'
-import { formatPrice } from '@/utils/format'
+import { mintArt } from '@/utils/contracts'
+import { createArtwork as apiCreateArtwork } from '@/api/artwork'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -193,9 +169,7 @@ const form = reactive({
   imageUrl: '',
   ipfsHash: '',
   startingPrice: 0.1,
-  reservePrice: 0,
-  minIncrement: 0.01,
-  duration: 259200 // 3天
+  minIncrement: 0.01
 })
 
 const rules: FormRules = {
@@ -209,7 +183,10 @@ const rules: FormRules = {
     { required: true, message: '请上传艺术品图片', trigger: 'change' }
   ],
   startingPrice: [
-    { required: true, message: '请设置起拍价', trigger: 'blur' }
+    { required: true, message: '请输入起拍价', trigger: 'blur' }
+  ],
+  minIncrement: [
+    { required: true, message: '请输入最低加价', trigger: 'blur' }
   ]
 }
 
@@ -249,7 +226,7 @@ const beforeUpload: UploadProps['beforeUpload'] = (file) => {
 }
 
 const handleUploadSuccess = (response: any) => {
-  if (response.code === 0) {
+  if (response.code === 0 || response.code === 200) {
     form.imageUrl = response.data.url
     form.ipfsHash = response.data.ipfsHash || ''
   } else {
@@ -294,46 +271,19 @@ const handleSubmit = async () => {
         imageUrl: form.imageUrl,
         ipfsHash: form.ipfsHash,
         categoryId: form.categoryId || 1,
-        ownerAddress: userStore.address
+        ownerAddress: userStore.address,
+        metadata: {
+          startingPrice: form.startingPrice,
+          minIncrement: form.minIncrement
+        }
       })
 
-      if (artworkRes.code !== 200) {
+      if (artworkRes.code !== 0 && artworkRes.code !== 200) {
         throw new Error(artworkRes.message || '艺术品同步失败')
       }
 
-      const artworkId = artworkRes.data.id
-
-      // 3. 创建区块链拍卖
-      let auctionId: any = 0
-      try {
-        auctionId = await createAuction(
-          tokenId,
-          form.startingPrice.toString(),
-          form.reservePrice.toString(),
-          form.minIncrement.toString(),
-          form.duration
-        )
-      } catch (error: any) {
-        console.warn('区块链拍卖创建失败，回退到模拟模式:', error.message)
-        auctionId = Math.floor(Math.random() * 1000000)
-      }
-
-      // 4. 同步拍卖到数据库
-      const auctionRes = await apiCreateAuction({
-        auctionId: Number(auctionId),
-        artworkId: artworkId,
-        startingPrice: form.startingPrice.toString(),
-        reservePrice: form.reservePrice.toString(),
-        minIncrement: form.minIncrement.toString(),
-        duration: form.duration
-      })
-
-      if (auctionRes.code !== 200) {
-        throw new Error(auctionRes.message || '拍卖同步失败')
-      }
-       
       ElMessage.success('发布成功！作品已提交审核，审核通过后将正式上架。')
-      router.push('/auctions')
+      router.push('/my-artworks')
     } catch (error: any) {
       console.error('Submit failed:', error)
       ElMessage.error(error.message || '发布失败')

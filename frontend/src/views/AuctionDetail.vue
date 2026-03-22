@@ -669,7 +669,7 @@ const fetchAuctionDetail = async () => {
   if (!idParam) return
 
   const id = String(idParam).trim()
-  const isMock = id.startsWith('mock-') || isNaN(Number(id)) || (Number(id) >= 100 && Number(id) < 200)
+  const isMock = id.startsWith('mock-') || isNaN(Number(id))
 
   if (isMock) {
     const foundMock = mockAuctions.find(m => m.auctionId === id)
