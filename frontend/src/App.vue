@@ -184,6 +184,8 @@ const handleSwitchRole = () => {
 
 // 提交管理员认证
 const submitAdminAuth = () => {
+  if (authLoading.value) return
+
   if (!adminForm.id || !adminForm.password) {
     ElMessage.warning('请填写完整的认证信息')
     return
@@ -196,7 +198,11 @@ const submitAdminAuth = () => {
     // 演示账号：ID 为 admin，密码为 admin888
     if (adminForm.id === 'admin' && adminForm.password === 'admin888') {
       userStore.setRole('admin')
-      ElMessage.success('管理员身份认证成功')
+      ElMessage.success({
+        message: '管理员身份认证成功',
+        duration: 2000,
+        grouping: true
+      })
       adminAuthVisible.value = false
       // 认证成功后直接跳转到管理后台首页
       router.push('/admin/dashboard')

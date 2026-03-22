@@ -27,7 +27,6 @@ export const getAuctions = async (req: Request, res: Response, next: NextFunctio
     }
 
     // 默认只显示已审核的作品（非管理员请求时）
-    // 注意：这里简单起见，所有竞买人请求都加这个过滤
     const artworkWhere: any = { isVerified: true }
 
     // 模糊搜索作品名称或描述
@@ -59,7 +58,8 @@ export const getAuctions = async (req: Request, res: Response, next: NextFunctio
         {
           model: Artwork,
           as: 'artwork',
-          where: artworkWhere, // 在这里增加审核状态过滤
+          required: true, // 强制 INNER JOIN，排除没有艺术品的无效拍卖
+          where: artworkWhere,
           include: [{ model: User, as: 'creator', attributes: ['id', 'address', 'username', 'avatar'] }]
         },
         { model: User, as: 'seller', attributes: ['id', 'address', 'username', 'avatar'] }
@@ -84,7 +84,6 @@ export const getAuctions = async (req: Request, res: Response, next: NextFunctio
 export const getAuctionById = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params
-    const { Op } = require('sequelize')
 
     const auction = await Auction.findOne({
       where: {
@@ -117,7 +116,6 @@ export const getAuctionById = async (req: Request, res: Response, next: NextFunc
 export const getBidHistory = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { auctionId } = req.params
-    const { Op } = require('sequelize')
 
     const bids = await Bid.findAll({
       where: {
@@ -156,6 +154,7 @@ export const getHotAuctions = async (req: Request, res: Response, next: NextFunc
         { 
           model: Artwork, 
           as: 'artwork',
+          required: true, // 确保作品存在
           where: { isVerified: true } 
         },
         { model: User, as: 'seller', attributes: ['id', 'address', 'username', 'avatar'] }
@@ -176,7 +175,12 @@ export const toggleHotAuction = async (req: Request, res: Response, next: NextFu
     const { id } = req.params
     const { isHot } = req.body
 
-    const auction = await Auction.findByPk(id)
+    const auction = await Auction.findOne({
+      where: {
+        [Op.or]: [{ id: id }, { auctionId: id }]
+      }
+    })
+
     if (!auction) {
       throw new AppError('拍卖不存在', -1, 404)
     }
@@ -189,26 +193,59 @@ export const toggleHotAuction = async (req: Request, res: Response, next: NextFu
 }
 
 // 物理删除拍卖 (管理员)
+// 管理员物理删除拍卖（连带删除艺术品）
 export const adminDeleteAuction = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params
+    console.log(`[Admin] 正在尝试删除拍卖 ID: ${id}`)
 
-    const auction = await Auction.findByPk(id)
+    // 1. 查找拍卖记录，支持数据库自增 ID 或业务 auctionId
+    const auction = await Auction.findOne({
+      where: {
+        [Op.or]: [
+          { id: id },
+          { auctionId: id }
+        ]
+      }
+    })
+
     if (!auction) {
-      throw new AppError('拍卖不存在', -1, 404)
+      console.warn(`[Admin] 拍卖记录不存在: ${id}`)
+      return res.success(null, '该记录已不存在或已被删除')
     }
 
-    // 同时将关联的作品 isOnAuction 设为 false，允许重新发布或删除作品
-    await Artwork.update({ isOnAuction: false }, { where: { id: auction.artworkId } })
+    const artworkId = auction.artworkId
+    console.log(`[Admin] 找到关联艺术品 ID: ${artworkId}`)
 
-    // 删除所有相关的出价记录
+    // 2. 级联删除：先彻底清除该拍卖关联的所有出价
     await Bid.destroy({ where: { auctionId: auction.id } })
 
-    // 删除拍卖记录
-    await auction.destroy()
+    // 3. 级联删除：处理艺术品及其所有场次（实现真正意义上的全站清除）
+    if (artworkId) {
+      // a. 找到该作品对应的所有其他拍卖 ID
+      const otherAuctions = await Auction.findAll({ where: { artworkId }, attributes: ['id'] })
+      const auctionIds = otherAuctions.map(a => a.id)
+      
+      // b. 清除这些拍卖的所有出价记录
+      if (auctionIds.length > 0) {
+        await Bid.destroy({ where: { auctionId: { [Op.in]: auctionIds } } })
+      }
 
-    res.success(null, '拍卖记录及相关出价已物理删除')
+      // c. 删除该作品下的所有拍卖场次
+      await Auction.destroy({ where: { artworkId } })
+
+      // d. 物理删除艺术品记录
+      await Artwork.destroy({ where: { id: artworkId } })
+      console.log(`[Admin] 级联物理删除成功: Artwork(${artworkId})`)
+    } else {
+      // 如果没有关联艺术品，仅删除当前拍卖
+      await auction.destroy()
+      console.log(`[Admin] 仅删除孤立拍卖记录: ${id}`)
+    }
+
+    res.success(null, '该作品及其所有数据已彻底从系统同步移除')
   } catch (error) {
+    console.error('[Admin] 物理删除失败:', error)
     next(error)
   }
 }
@@ -225,7 +262,11 @@ export const getEndingSoonAuctions = async (req: Request, res: Response, next: N
         endTime: { [Op.lte]: soonTime, [Op.gt]: now }
       },
       include: [
-        { model: Artwork, as: 'artwork' },
+        { 
+          model: Artwork, 
+          as: 'artwork',
+          required: true // 确保作品存在
+        },
         { model: User, as: 'seller', attributes: ['id', 'address', 'username', 'avatar'] }
       ],
       order: [['endTime', 'ASC']],
@@ -378,7 +419,12 @@ export const getMyBids = async (req: Request, res: Response, next: NextFunction)
         {
           model: Auction,
           as: 'auction',
-          include: [{ model: Artwork, as: 'artwork' }]
+          required: true, // 确保拍卖存在
+          include: [{ 
+            model: Artwork, 
+            as: 'artwork',
+            required: true // 确保作品存在
+          }]
         }
       ],
       order: [['createdAt', 'DESC']]
@@ -409,7 +455,11 @@ export const getMyAuctions = async (req: Request, res: Response, next: NextFunct
 
     const auctions = await Auction.findAll({
       where: { sellerAddress: address },
-      include: [{ model: Artwork, as: 'artwork' }],
+      include: [{ 
+        model: Artwork, 
+        as: 'artwork',
+        required: true // 确保作品存在
+      }],
       order: [['createdAt', 'DESC']]
     })
 

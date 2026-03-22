@@ -69,7 +69,7 @@
         </div>
 
         <el-row :gutter="30" v-loading="loading">
-          <el-col :xs="24" :sm="12" :md="8" :lg="6" v-for="auction in hotAuctions" :key="auction.auctionId" class="card-col">
+          <el-col :xs="24" :sm="12" :md="8" :lg="6" v-for="auction in hotAuctions" :key="auction.id || auction.auctionId" class="card-col">
             <AuctionCard :auction="auction" :show-countdown="true" @click="goToDetail(auction)" />
           </el-col>
         </el-row>

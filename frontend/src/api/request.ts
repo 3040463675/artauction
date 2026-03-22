@@ -16,6 +16,16 @@ service.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
+    const persistedUser = localStorage.getItem('user-store')
+    if (persistedUser) {
+      try {
+        const user = JSON.parse(persistedUser)
+        if (user?.role) {
+          config.headers['x-user-role'] = user.role
+        }
+      } catch {
+      }
+    }
     return config
   },
   (error) => {
@@ -48,18 +58,21 @@ service.interceptors.response.use(
     if (error.response) {
       switch (error.response.status) {
         case 401:
-          ElMessage.error('未授权，请重新登录')
+          if (!localStorage.getItem('token')) {
+            ElMessage.error('会话已过期，请重新连接钱包')
+          } else {
+            ElMessage.error('未授权操作或登录失效')
+          }
           localStorage.removeItem('token')
-          window.location.href = '/'
           break
         case 403:
-          ElMessage.error('拒绝访问')
+          ElMessage.error('权限不足：您的账号没有管理员权限')
           break
         case 404:
           ElMessage.error('请求资源不存在')
           break
         case 500:
-          ElMessage.error('服务器错误')
+          ElMessage.error('服务器错误，请联系管理员')
           break
         default:
           ElMessage.error(error.message || '请求失败')

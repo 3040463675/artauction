@@ -40,7 +40,7 @@
           :md="8"
           :lg="6"
           v-for="auction in auctions"
-          :key="auction.auctionId"
+          :key="auction.id || auction.auctionId"
           class="auction-col"
         >
           <AuctionCard

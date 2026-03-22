@@ -7,8 +7,9 @@
       </div>
       <div class="header-right">
         <el-radio-group v-model="filterStatus" size="large">
-          <el-radio-button label="active">进行中</el-radio-button>
-          <el-radio-button label="all">全部拍卖</el-radio-button>
+          <el-radio-button value="all">全部拍卖</el-radio-button>
+          <el-radio-button value="active">进行中</el-radio-button>
+          <el-radio-button value="ended">已结束</el-radio-button>
         </el-radio-group>
       </div>
     </div>
@@ -75,7 +76,7 @@
             <el-button 
               type="danger" 
               size="small" 
-              @click="handleDelete(row)"
+              @click.stop="handleDelete(row)"
             >
               删除
             </el-button>
@@ -186,22 +187,31 @@ const toggleHot = async (row: any) => {
 
 // 删除拍卖
 const handleDelete = async (row: any) => {
+  if (!row.id) {
+    ElMessage.error('无法定位拍卖记录ID')
+    return
+  }
+
   try {
-    await ElMessageBox.confirm('确定删除该拍卖吗？此操作将导致拍卖记录及出价日志被物理删除，关联作品将变为非拍卖状态。', '严重警告', {
-      confirmButtonText: '确定物理删除',
+    await ElMessageBox.confirm('确定删除该作品及相关的拍卖记录吗？', '严重警告', {
+      confirmButtonText: '确定删除',
       cancelButtonText: '取消',
       type: 'error'
     })
     
+    loading.value = true // 开始加载动画
     const res = await deleteAuction(row.id)
     if (res.code === 0 || res.code === 200) {
-      ElMessage.success('物理删除成功')
-      fetchData()
+      ElMessage.success('物理删除成功，作品已从平台移除')
+      await fetchData() // 刷新列表
     }
-  } catch (error) {
+  } catch (error: any) {
     if (error !== 'cancel') {
-      ElMessage.error('删除失败')
+      console.error('Delete failed:', error)
+      ElMessage.error(error.message || '删除失败，请检查网络或权限')
     }
+  } finally {
+    loading.value = false
   }
 }
 

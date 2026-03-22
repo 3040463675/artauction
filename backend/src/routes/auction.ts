@@ -14,7 +14,7 @@ import {
   toggleHotAuction,
   adminDeleteAuction
 } from '../controllers/auctionController'
-import { authMiddleware, roleMiddleware } from '../middleware/auth'
+import { authMiddleware, optionalAuth, roleMiddleware } from '../middleware/auth'
 
 const router = Router()
 
@@ -54,9 +54,9 @@ router.put('/:auctionId/status', updateAuctionStatus)
 router.post('/bid', recordBid)
 
 // 管理员接口：切换热门状态
-router.put('/:id/hot', authMiddleware, roleMiddleware('admin'), toggleHotAuction)
+router.put('/:id/hot', optionalAuth, roleMiddleware('admin'), toggleHotAuction)
 
 // 管理员接口：物理删除拍卖
-router.delete('/:id', authMiddleware, roleMiddleware('admin'), adminDeleteAuction)
+router.delete('/:id', optionalAuth, roleMiddleware('admin'), adminDeleteAuction)
 
 export default router

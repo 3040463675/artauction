@@ -14,9 +14,9 @@
 
       <div class="filter-section">
         <el-radio-group v-model="statusFilter" size="large">
-          <el-radio-button label="all">全部</el-radio-button>
-          <el-radio-button label="auctioning">拍卖中</el-radio-button>
-          <el-radio-button label="ended">已结束</el-radio-button>
+          <el-radio-button value="all">全部</el-radio-button>
+          <el-radio-button value="auctioning">拍卖中</el-radio-button>
+          <el-radio-button value="ended">已结束</el-radio-button>
         </el-radio-group>
       </div>
 

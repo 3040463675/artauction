@@ -7,9 +7,9 @@
       </div>
       <div class="header-right">
         <el-radio-group v-model="filterStatus" size="large" @change="handleFilterChange">
-          <el-radio-button label="all">全部记录</el-radio-button>
-          <el-radio-button label="pending">待审核</el-radio-button>
-          <el-radio-button label="verified">已通过</el-radio-button>
+          <el-radio-button value="all">全部记录</el-radio-button>
+          <el-radio-button value="pending">待审核</el-radio-button>
+          <el-radio-button value="verified">已通过</el-radio-button>
         </el-radio-group>
       </div>
     </div>
