@@ -72,7 +72,8 @@ import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { getAuctions } from '@/api/auction'
 import AuctionCard from '@/components/AuctionCard.vue'
-import { mockAuctions } from '@/utils/mockData'
+import { ElMessage } from 'element-plus'
+import { Search, Sort, Filter } from '@element-plus/icons-vue'
 
 const router = useRouter()
 
@@ -98,102 +99,25 @@ watch(keyword, () => {
 const fetchAuctions = async () => {
   loading.value = true
   try {
-    // 基础参数处理
     const isSpecialFilter = ['endingSoon', 'newlyAdded'].includes(statusFilter.value as string)
     const isEndedFilter = statusFilter.value === 4
 
     const res = await getAuctions({
-      page: 1, 
-      pageSize: 1000, 
+      page: page.value,
+      pageSize: pageSize.value,
       status: (isSpecialFilter || isEndedFilter || statusFilter.value === 'all') ? undefined : statusFilter.value as number,
       keyword: keyword.value,
       sortBy: sortBy.value === 'default' ? 'newest' : sortBy.value
     })
     
-    // 1. 获取后端 API 数据
-    const apiList = res.data?.list || []
-    
-    // 2. 准备 Mock 数据（进行前端模糊搜索）
-    let filteredMock = []
-    const searchKey = keyword.value.trim().toLowerCase()
-    if (searchKey) {
-      filteredMock = mockAuctions.filter(item => {
-        const nameMatch = item.artwork?.name?.toLowerCase().includes(searchKey)
-        const idMatch = item.auctionId?.toString().toLowerCase().includes(searchKey)
-        const descMatch = item.artwork?.description?.toLowerCase().includes(searchKey)
-        return nameMatch || idMatch || descMatch
-      })
-    } else {
-      filteredMock = [...mockAuctions]
-    }
-
-    // 3. 合并数据并去重
-    const seenIds = new Set(apiList.map((a: any) => a.auctionId?.toString()))
-    const uniqueMock = filteredMock.filter(m => !seenIds.has(m.auctionId?.toString()))
-    let combinedRawList = [...apiList, ...uniqueMock]
-
-    // 4. 同步本地模拟竞拍成功的状态
-    const localMockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
-    let synchronizedList = combinedRawList.map(item => {
-      const bidId = item.auctionId || item.id
-      const bidInfo = localMockBids[bidId]
-      
-      if (bidInfo) {
-        return { ...item, status: 4 }
-      }
-      
-      // 测试模式：未成交的设为进行中，并确保有 createdAt
-      return {
-        ...item,
-        status: item.status === 4 ? 4 : 1,
-        createdAt: item.createdAt || (Date.now() - 3600000), // 默认1小时前发布
-        endTime: item.endTime && new Date(item.endTime).getTime() > Date.now() 
-          ? item.endTime 
-          : new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString()
-      }
-    })
-
-    // 5. 应用增强的状态过滤逻辑
-    const now = Date.now()
-    const oneHour = 60 * 60 * 1000
-
-    if (statusFilter.value === 'endingSoon') {
-      // 即将结束：状态为1且剩余时间小于1小时
-      synchronizedList = synchronizedList.filter(a => {
-        const remaining = new Date(a.endTime).getTime() - now
-        return a.status === 1 && remaining > 0 && remaining <= oneHour
-      })
-    } else if (statusFilter.value === 'newlyAdded') {
-      // 最新发布：发布时间在1小时内
-      synchronizedList = synchronizedList.filter(a => {
-        const age = now - new Date(a.createdAt).getTime()
-        return age >= 0 && age <= oneHour
-      })
-    } else if (statusFilter.value !== 'all') {
-      synchronizedList = synchronizedList.filter(a => a.status === statusFilter.value)
-    }
-
-    // 6. 应用排序逻辑
-    if (sortBy.value === 'priceDesc') {
-      synchronizedList.sort((a, b) => Number(b.highestBid || b.startingPrice) - Number(a.highestBid || a.startingPrice))
-    } else if (sortBy.value === 'priceAsc') {
-      synchronizedList.sort((a, b) => Number(a.highestBid || a.startingPrice) - Number(b.highestBid || b.startingPrice))
-    } else if (sortBy.value === 'endTime') {
-      synchronizedList.sort((a, b) => new Date(a.endTime).getTime() - new Date(b.endTime).getTime())
-    } else {
-      // 默认/最新发布
-      synchronizedList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    }
-    
-    // 7. 更新总数与分页
-    total.value = synchronizedList.length
-    const start = (page.value - 1) * pageSize.value
-    const end = start + pageSize.value
-    auctions.value = synchronizedList.slice(start, end)
+    // 100% 数据库同步：直接使用后端返回的数据
+    auctions.value = res.data?.list || []
+    total.value = res.data?.total || 0
   } catch (error) {
     console.error('Failed to fetch auctions:', error)
-    auctions.value = [...mockAuctions]
-    total.value = mockAuctions.length
+    ElMessage.error('无法同步云端数据，请检查后端服务')
+    auctions.value = []
+    total.value = 0
   } finally {
     loading.value = false
   }

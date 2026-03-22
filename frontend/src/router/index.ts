@@ -35,7 +35,7 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/admin',
-    component: () => import('@/views/AdminLayout.vue'),
+    component: () => import('@/views/admin/AdminLayout.vue'),
     meta: { requiresAuth: true, requiresAdmin: true },
     children: [
       {
@@ -45,20 +45,20 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'dashboard',
         name: 'AdminDashboard',
-        component: () => import('@/views/AdminDashboard.vue'),
+        component: () => import('@/views/admin/Dashboard.vue'),
         meta: { title: '数据概览' }
       },
       {
-        path: 'users',
-        name: 'AdminUsers',
-        component: () => import('@/views/AdminDashboard.vue'), // 暂时占位
-        meta: { title: '用户管理' }
+        path: 'audit',
+        name: 'AdminAudit',
+        component: () => import('@/views/admin/ArtworkAudit.vue'),
+        meta: { title: '作品审核' }
       },
       {
-        path: 'artworks',
-        name: 'AdminArtworks',
-        component: () => import('@/views/AdminDashboard.vue'), // 暂时占位
-        meta: { title: '作品审核' }
+        path: 'auctions',
+        name: 'AdminAuctions',
+        component: () => import('@/views/admin/AuctionManager.vue'),
+        meta: { title: '拍卖管理' }
       }
     ]
   },
@@ -85,12 +85,6 @@ const routes: RouteRecordRaw[] = [
     name: 'Profile',
     component: () => import('@/views/Profile.vue'),
     meta: { title: '个人中心', requiresAuth: true }
-  },
-  {
-    path: '/settings',
-    name: 'Settings',
-    component: () => import('@/views/Settings.vue'),
-    meta: { title: '设置', requiresAuth: true }
   },
   {
     path: '/:pathMatch(.*)*',

@@ -19,10 +19,16 @@ export const getAuctions = async (req: Request, res: Response, next: NextFunctio
 
     const where: any = {}
 
-    // 状态筛选
+    // 状态筛选：如果未指定状态，默认排除“已成交/已下架” (Settled = 4)
     if (status !== undefined && status !== '') {
       where.status = Number(status)
+    } else {
+      where.status = { [Op.ne]: AuctionStatus.Settled }
     }
+
+    // 默认只显示已审核的作品（非管理员请求时）
+    // 注意：这里简单起见，所有竞买人请求都加这个过滤
+    const artworkWhere: any = { isVerified: true }
 
     // 模糊搜索作品名称或描述
     if (keyword) {
@@ -41,6 +47,10 @@ export const getAuctions = async (req: Request, res: Response, next: NextFunctio
       order = [['highestBid', 'DESC']]
     } else if (sortBy === 'newest') {
       order = [['createdAt', 'DESC']]
+    } else if (sortBy === 'priceDesc') {
+      order = [['highestBid', 'DESC']]
+    } else if (sortBy === 'priceAsc') {
+      order = [['highestBid', 'ASC']]
     }
 
     const { count, rows } = await Auction.findAndCountAll({
@@ -49,6 +59,7 @@ export const getAuctions = async (req: Request, res: Response, next: NextFunctio
         {
           model: Artwork,
           as: 'artwork',
+          where: artworkWhere, // 在这里增加审核状态过滤
           include: [{ model: User, as: 'creator', attributes: ['id', 'address', 'username', 'avatar'] }]
         },
         { model: User, as: 'seller', attributes: ['id', 'address', 'username', 'avatar'] }
@@ -137,16 +148,66 @@ export const getBidHistory = async (req: Request, res: Response, next: NextFunct
 export const getHotAuctions = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const auctions = await Auction.findAll({
-      where: { status: AuctionStatus.Active },
+      where: { 
+        status: AuctionStatus.Active, // 热门只显示进行中的
+        isHot: true 
+      },
       include: [
-        { model: Artwork, as: 'artwork' },
+        { 
+          model: Artwork, 
+          as: 'artwork',
+          where: { isVerified: true } 
+        },
         { model: User, as: 'seller', attributes: ['id', 'address', 'username', 'avatar'] }
       ],
       order: [['highestBid', 'DESC']],
-      limit: 8
+      limit: 12 
     })
 
     res.success(auctions)
+  } catch (error) {
+    next(error)
+  }
+}
+
+// 切换热门状态 (管理员)
+export const toggleHotAuction = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params
+    const { isHot } = req.body
+
+    const auction = await Auction.findByPk(id)
+    if (!auction) {
+      throw new AppError('拍卖不存在', -1, 404)
+    }
+
+    await auction.update({ isHot })
+    res.success(auction)
+  } catch (error) {
+    next(error)
+  }
+}
+
+// 物理删除拍卖 (管理员)
+export const adminDeleteAuction = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params
+
+    const auction = await Auction.findByPk(id)
+    if (!auction) {
+      throw new AppError('拍卖不存在', -1, 404)
+    }
+
+    // 同时将关联的作品 isOnAuction 设为 false，允许重新发布或删除作品
+    await Artwork.update({ isOnAuction: false }, { where: { id: auction.artworkId } })
+
+    // 删除所有相关的出价记录
+    await Bid.destroy({ where: { auctionId: auction.id } })
+
+    // 删除拍卖记录
+    await auction.destroy()
+
+    res.success(null, '拍卖记录及相关出价已物理删除')
   } catch (error) {
     next(error)
   }
@@ -160,7 +221,7 @@ export const getEndingSoonAuctions = async (req: Request, res: Response, next: N
 
     const auctions = await Auction.findAll({
       where: {
-        status: AuctionStatus.Active,
+        status: AuctionStatus.Active, // 只获取进行中的
         endTime: { [Op.lte]: soonTime, [Op.gt]: now }
       },
       include: [
@@ -226,13 +287,17 @@ export const createAuction = async (req: Request, res: Response, next: NextFunct
   }
 }
 
-// 更新拍卖状态（用于链上事件同步）
+// 更新拍卖状态（用于链上事件同步或结算）
 export const updateAuctionStatus = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { auctionId } = req.params
     const { status, highestBid, highestBidder } = req.body
 
-    const auction = await Auction.findOne({ where: { auctionId } })
+    const auction = await Auction.findOne({
+      where: {
+        [Op.or]: [{ id: auctionId }, { auctionId: auctionId }]
+      }
+    })
 
     if (!auction) {
       throw new AppError('拍卖不存在', -1, 404)
@@ -255,10 +320,26 @@ export const recordBid = async (req: Request, res: Response, next: NextFunction)
   try {
     const { auctionId, bidderAddress, amount, txHash } = req.body
 
-    const auction = await Auction.findOne({ where: { auctionId } })
+    const auction = await Auction.findOne({
+      where: {
+        [Op.or]: [{ id: auctionId }, { auctionId: auctionId }]
+      }
+    })
 
     if (!auction) {
       throw new AppError('拍卖不存在', -1, 404)
+    }
+
+    // 关键校验：检查拍卖是否已结束
+    const now = new Date()
+    if (auction.status !== AuctionStatus.Active) {
+      throw new AppError('拍卖当前不可参与（可能已结束或已结算）', -1, 400)
+    }
+
+    if (now > new Date(auction.endTime)) {
+      // 自动标记为已结束
+      await auction.update({ status: AuctionStatus.Ended })
+      throw new AppError('拍卖已过结束时间', -1, 400)
     }
 
     // 创建出价记录
@@ -272,8 +353,7 @@ export const recordBid = async (req: Request, res: Response, next: NextFunction)
     // 更新拍卖信息
     await auction.update({
       highestBid: amount,
-      highestBidder: bidderAddress,
-      status: AuctionStatus.Active
+      highestBidder: bidderAddress
     })
 
     res.success({ success: true })

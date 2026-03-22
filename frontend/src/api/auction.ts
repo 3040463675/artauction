@@ -39,3 +39,32 @@ export const getMyAuctions = (address: string) => {
     params: { address }
   })
 }
+
+// 管理员：切换热门状态
+export const toggleHotAuction = (id: number, isHot: boolean) => {
+  return request.put<ApiResponse<Auction>>(`/auctions/${id}/hot`, { isHot })
+}
+
+// 管理员：物理删除拍卖
+export const deleteAuction = (id: number) => {
+  return request.delete<ApiResponse<null>>(`/auctions/${id}`)
+}
+
+// 记录出价
+export const recordBid = (data: {
+  auctionId: number | string
+  bidderAddress: string
+  amount: string | number
+  txHash?: string
+}) => {
+  return request.post<ApiResponse<{ success: true }>>('/auctions/bid', data)
+}
+
+// 更新拍卖状态
+export const updateAuctionStatus = (auctionId: number | string, data: {
+  status: number
+  highestBid?: string | number
+  highestBidder?: string
+}) => {
+  return request.put<ApiResponse<Auction>>(`/auctions/${auctionId}/status`, data)
+}

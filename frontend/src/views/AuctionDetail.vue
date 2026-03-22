@@ -292,7 +292,7 @@ import {
 import dayjs from 'dayjs'
 import { useUserStore } from '@/stores/user'
 import { placeBid, endAuction } from '@/utils/contracts'
-import { getAuctionById, getBidHistory } from '@/api/auction'
+import { getAuctionById, getBidHistory, recordBid, updateAuctionStatus } from '@/api/auction'
 import CountdownTimer from '@/components/CountdownTimer.vue'
 import { mockAuctions } from '@/utils/mockData'
 import { formatPrice } from '@/utils/format'
@@ -402,6 +402,17 @@ const finalizeBidResult = async (isWinner: boolean) => {
     isCancelled.value = true
     settleTime.value = nowStr
 
+    // 同步到数据库
+    try {
+      await updateAuctionStatus(auction.value.auctionId, {
+        status: 4,
+        highestBid: auction.value.highestBid,
+        highestBidder: auction.value.highestBidder
+      })
+    } catch (err) {
+      console.error('Failed to sync auction status to DB:', err)
+    }
+
     if (sellerAddress && sellerAddress !== '0x...' && userStore.isConnected) {
       try {
         ElMessage.info('正在发起支付确认...')
@@ -461,7 +472,15 @@ const finalizeBidResult = async (isWinner: boolean) => {
 
 // 参与竞拍
 const handleBid = async () => {
-  if (!userStore.isConnected) { ElMessage.warning('请先连接钱包'); return }
+  if (!userStore.isConnected) {
+    ElMessage.warning('请先连接钱包'); return
+  }
+
+  // 增加状态校验：非“进行中”状态禁止出价
+  if (auction.value.status !== 1) {
+    ElMessage.error('该拍卖已结束或已成交，无法继续出价'); return
+  }
+
   if (bidAmount.value < minBid.value) {
     ElMessage.warning(`最低出价必须大于 ${formatPrice(minBid.value)} ETH`); return
   }
@@ -484,6 +503,18 @@ const handleBid = async () => {
   bidHistory.value = [userBid, ...bidHistory.value]
   auction.value.highestBid = bidAmount.value.toString()
   auction.value.highestBidder = userStore.address
+  
+  // 同步出价到数据库
+  try {
+    await recordBid({
+      auctionId: auction.value.auctionId,
+      bidderAddress: userStore.address,
+      amount: bidAmount.value
+    })
+  } catch (err) {
+    console.error('Failed to record bid to DB:', err)
+  }
+
   ElMessage.success('出价已提交，正在确认竞争状态...')
 
   if (pendingBotTimer.value) clearTimeout(pendingBotTimer.value)
@@ -696,11 +727,10 @@ const fetchAuctionDetail = async () => {
     const res = await getAuctionById(Number(id))
     auction.value = res.data
     
-    // 测试模式：强制将后端数据设为“进行中”
-    if (auction.value) {
-      auction.value.status = 1
-      if (!auction.value.endTime || new Date(auction.value.endTime).getTime() <= Date.now()) {
-        auction.value.endTime = Date.now() + 3 * 24 * 60 * 60 * 1000
+    // 如果拍卖已过结束时间但状态还是 Active，前端显示为 Ended
+    if (auction.value && auction.value.status === 1) {
+      if (new Date(auction.value.endTime).getTime() <= Date.now()) {
+        auction.value.status = 2
       }
     }
 

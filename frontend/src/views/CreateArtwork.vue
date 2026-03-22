@@ -176,7 +176,8 @@ import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules, UploadProps } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { mintArt, createAuction } from '@/utils/contracts'
-import { uploadArtworkImage, createArtwork } from '@/api/artwork'
+import { uploadArtworkImage, createArtwork as apiCreateArtwork } from '@/api/artwork'
+import { createAuction as apiCreateAuction } from '@/api/auction'
 import { formatPrice } from '@/utils/format'
 
 const router = useRouter()
@@ -278,59 +279,63 @@ const handleSubmit = async () => {
           form.name,
           form.description,
           form.imageUrl,
-          'Qm' + Math.random().toString(36).substring(2, 15) // 模拟 IPFS Hash
+          form.ipfsHash || 'Qm' + Math.random().toString(36).substring(2, 15)
         )
       } catch (error: any) {
         console.warn('区块链铸造失败，回退到模拟模式:', error.message)
-        // 如果合约未配置或调用失败，自动生成一个随机 TokenID
         tokenId = Math.floor(Math.random() * 1000000)
       }
 
-      // 2. 创建拍卖
+      // 2. 同步艺术品到数据库
+      const artworkRes = await apiCreateArtwork({
+        tokenId: Number(tokenId),
+        name: form.name,
+        description: form.description,
+        imageUrl: form.imageUrl,
+        ipfsHash: form.ipfsHash,
+        categoryId: form.categoryId || 1,
+        ownerAddress: userStore.address
+      })
+
+      if (artworkRes.code !== 200) {
+        throw new Error(artworkRes.message || '艺术品同步失败')
+      }
+
+      const artworkId = artworkRes.data.id
+
+      // 3. 创建区块链拍卖
+      let auctionId: any = 0
       try {
-        await createAuction(
+        auctionId = await createAuction(
           tokenId,
           form.startingPrice.toString(),
           form.reservePrice.toString(),
           form.minIncrement.toString(),
-          form.duration // 转为秒
+          form.duration
         )
       } catch (error: any) {
         console.warn('区块链拍卖创建失败，回退到模拟模式:', error.message)
+        auctionId = Math.floor(Math.random() * 1000000)
       }
 
-      // 3. 同步到本地模拟数据 (实现即时可见)
-      const newAuction = {
-        auctionId: 'mock-' + Date.now(),
-        artwork: {
-          name: form.name,
-          imageUrl: form.imageUrl,
-          description: form.description,
-          creator: userStore.address,
-          isVerified: true
-        },
+      // 4. 同步拍卖到数据库
+      const auctionRes = await apiCreateAuction({
+        auctionId: Number(auctionId),
+        artworkId: artworkId,
         startingPrice: form.startingPrice.toString(),
-        highestBid: '0',
+        reservePrice: form.reservePrice.toString(),
         minIncrement: form.minIncrement.toString(),
-        status: 1,
-        endTime: Date.now() + form.duration * 1000
-      }
-      
-      // 注入到全局模拟数组头部
-       // @ts-ignore
-       if (typeof mockAuctions !== 'undefined') {
-         // @ts-ignore
-         mockAuctions.unshift(newAuction)
-       }
+        duration: form.duration
+      })
 
-       // 同时存入 localStorage 确保刷新后首页也能看到
-       const localCreated = JSON.parse(localStorage.getItem('MOCK_CREATED_AUCTIONS') || '[]')
-       localCreated.unshift(newAuction)
-       localStorage.setItem('MOCK_CREATED_AUCTIONS', JSON.stringify(localCreated))
+      if (auctionRes.code !== 200) {
+        throw new Error(auctionRes.message || '拍卖同步失败')
+      }
        
-       ElMessage.success('发布成功！作品已上架并同步至市场。')
-       router.push('/')
+      ElMessage.success('发布成功！作品已提交审核，审核通过后将正式上架。')
+      router.push('/auctions')
     } catch (error: any) {
+      console.error('Submit failed:', error)
       ElMessage.error(error.message || '发布失败')
     } finally {
       submitting.value = false

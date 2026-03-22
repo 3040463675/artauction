@@ -89,31 +89,11 @@ const fetchMyArtworks = async () => {
   loading.value = true
   try {
     const res = await getMyAuctions(userStore.address)
-    // 1. 获取本地发布的作品（通过 localStorage）
-    const localCreated = JSON.parse(localStorage.getItem('MOCK_CREATED_AUCTIONS') || '[]')
-    
-    // 2. 获取接口返回的作品
-    const rawListFromApi = res.data || []
-    
-    // 3. 合并列表
-    artworks.value = [...localCreated, ...rawListFromApi]
-
-    // 4. 如果合并后还是空的，显示一个默认的 mock 数据（可选，为了演示效果）
-    if (artworks.value.length === 0) {
-      const mock = mockAuctions[0]
-      artworks.value = [
-        {
-          ...mock,
-          id: 1,
-          sellerAddress: userStore.address,
-        }
-      ] as any
-    }
+    // 100% 数据库同步：仅使用后端 API 返回的数据
+    artworks.value = res.data || []
   } catch (error) {
     console.error('Failed to fetch my artworks:', error)
-    // 报错时尝试显示本地数据
-    const localCreated = JSON.parse(localStorage.getItem('MOCK_CREATED_AUCTIONS') || '[]')
-    artworks.value = localCreated
+    artworks.value = []
   } finally {
     loading.value = false
   }
@@ -141,19 +121,12 @@ const handleDelete = async (item: any) => {
       }
     )
 
-    const id = item.id || item.auctionId
+    const id = item.id
     
-    // 1. 如果是数据库中的数字ID，调用后端删除
-    if (!String(id).startsWith('mock-')) {
-      await deleteArtwork(id)
-    }
+    // 调用后端删除
+    await deleteArtwork(id)
 
-    // 2. 从本地缓存中删除
-    const localCreated = JSON.parse(localStorage.getItem('MOCK_CREATED_AUCTIONS') || '[]')
-    const updatedLocal = localCreated.filter((a: any) => (a.id || a.auctionId) !== id)
-    localStorage.setItem('MOCK_CREATED_AUCTIONS', JSON.stringify(updatedLocal))
-
-    // 3. 刷新列表
+    // 刷新列表
     ElMessage.success('作品已删除')
     fetchMyArtworks()
   } catch (error: any) {

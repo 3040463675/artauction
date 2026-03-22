@@ -172,6 +172,7 @@ export const updateArtwork = async (req: Request, res: Response, next: NextFunct
 export const verifyArtwork = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params
+    const { isVerified = true } = req.body
 
     const artwork = await Artwork.findByPk(id)
 
@@ -179,7 +180,7 @@ export const verifyArtwork = async (req: Request, res: Response, next: NextFunct
       throw new AppError('艺术品不存在', -1, 404)
     }
 
-    await artwork.update({ isVerified: true })
+    await artwork.update({ isVerified })
 
     res.success(artwork)
   } catch (error) {
@@ -187,7 +188,28 @@ export const verifyArtwork = async (req: Request, res: Response, next: NextFunct
   }
 }
 
-// 删除艺术品
+// 驳回并删除艺术品（管理员权限）
+export const rejectArtwork = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params
+    if (!req.user) throw new AppError('未授权', -1, 401)
+
+    const artwork = await Artwork.findByPk(id)
+    if (!artwork) throw new AppError('艺术品不存在', -1, 404)
+
+    // 删除关联的拍卖
+    await Auction.destroy({ where: { artworkId: id } })
+    
+    // 物理删除作品
+    await artwork.destroy()
+    
+    res.success(null, '驳回成功，作品已移除')
+  } catch (error) {
+    next(error)
+  }
+}
+
+// 删除艺术品 (用户级)
 export const deleteArtwork = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params

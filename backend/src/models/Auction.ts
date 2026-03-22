@@ -24,6 +24,7 @@ class Auction extends Model {
   public highestBid!: string
   public highestBidder!: string | null
   public status!: AuctionStatus
+  public isHot!: boolean
   public txHash!: string | null
   public readonly createdAt!: Date
   public readonly updatedAt!: Date
@@ -45,7 +46,7 @@ Auction.init(
     artworkId: {
       type: DataTypes.INTEGER.UNSIGNED,
       allowNull: false,
-      comment: '艺术品ID'
+      comment: '关联艺术品ID'
     },
     sellerAddress: {
       type: DataTypes.STRING(42),
@@ -53,22 +54,19 @@ Auction.init(
       comment: '卖家地址'
     },
     startingPrice: {
-      type: DataTypes.DECIMAL(30, 18),
+      type: DataTypes.DECIMAL(20, 18),
       allowNull: false,
-      defaultValue: '0',
-      comment: '起拍价(ETH)'
+      comment: '起拍价格'
     },
     reservePrice: {
-      type: DataTypes.DECIMAL(30, 18),
+      type: DataTypes.DECIMAL(20, 18),
       allowNull: false,
-      defaultValue: '0',
-      comment: '保留价(ETH)'
+      comment: '保留价格'
     },
     minIncrement: {
-      type: DataTypes.DECIMAL(30, 18),
+      type: DataTypes.DECIMAL(20, 18),
       allowNull: false,
-      defaultValue: '0',
-      comment: '最小加价(ETH)'
+      comment: '最低加价'
     },
     startTime: {
       type: DataTypes.DATE,
@@ -81,7 +79,7 @@ Auction.init(
       comment: '结束时间'
     },
     highestBid: {
-      type: DataTypes.DECIMAL(30, 18),
+      type: DataTypes.DECIMAL(20, 18),
       allowNull: false,
       defaultValue: '0',
       comment: '当前最高出价'
@@ -89,13 +87,20 @@ Auction.init(
     highestBidder: {
       type: DataTypes.STRING(42),
       allowNull: true,
-      comment: '最高出价者地址'
+      comment: '当前最高出价者'
     },
     status: {
-      type: DataTypes.TINYINT,
+      type: DataTypes.INTEGER,
       allowNull: false,
       defaultValue: AuctionStatus.Pending,
       comment: '拍卖状态'
+    },
+    isHot: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      field: 'is_hot',
+      comment: '是否为热门推荐'
     },
     txHash: {
       type: DataTypes.STRING(66),

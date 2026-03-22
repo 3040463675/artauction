@@ -43,6 +43,16 @@ export const updateArtwork = (id: number, data: Partial<Artwork>) => {
   return request.put<ApiResponse<Artwork>>(`/artworks/${id}`, data)
 }
 
+// 审核作品 (通过/撤回)
+export const verifyArtwork = (id: number | string, isVerified: boolean = true) => {
+  return request.post<ApiResponse<null>>(`/artworks/${id}/verify`, { isVerified })
+}
+
+// 驳回作品 (物理删除或标记驳回)
+export const rejectArtwork = (id: number | string) => {
+  return request.post<ApiResponse<null>>(`/artworks/${id}/reject`)
+}
+
 // 删除艺术品
 export const deleteArtwork = (id: number | string) => {
   return request.delete<ApiResponse<null>>(`/artworks/${id}`)

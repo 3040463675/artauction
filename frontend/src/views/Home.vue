@@ -116,7 +116,6 @@ import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { getHotAuctions } from '@/api/auction'
 import AuctionCard from '@/components/AuctionCard.vue'
-import { mockAuctions } from '@/utils/mockData'
 import { formatPrice } from '@/utils/format'
 
 const router = useRouter()
@@ -154,37 +153,11 @@ const fetchHotAuctions = async () => {
   loading.value = true
   try {
     const res = await getHotAuctions()
-    // 1. 获取本地发布的作品
-    const localCreated = JSON.parse(localStorage.getItem('MOCK_CREATED_AUCTIONS') || '[]')
-    
-    // 2. 获取原始列表（优先接口，否则 mock）
-    const rawListFromApi = res.data?.length > 0 ? res.data : [...mockAuctions]
-    
-    // 3. 合并列表并强制所有作品为“进行中”状态进行测试
-    const combinedList = [...localCreated, ...rawListFromApi].map(item => ({
-      ...item,
-      status: 1, // 强制为进行中 (Active)
-      endTime: item.endTime && new Date(item.endTime).getTime() > Date.now() 
-        ? item.endTime 
-        : new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString() // 如果时间过期，重置为 3 天后
-    }))
-    
-    // 4. 同步本地模拟竞拍成功的状态并实现“下架”
-    const localMockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
-    hotAuctions.value = combinedList.filter(item => {
-      const bidInfo = localMockBids[item.auctionId || item.id]
-      // 如果本地记录中已成交，则直接从热门列表中移除（下架）
-      return !bidInfo
-    }).slice(0, 12) // 最终只取前 12 个展示
+    // 100% 数据库同步：后端已处理热门和审核过滤
+    hotAuctions.value = res.data || []
   } catch (error) {
     console.error('Failed to fetch hot auctions:', error)
-    const localCreated = JSON.parse(localStorage.getItem('MOCK_CREATED_AUCTIONS') || '[]')
-    const combinedList = [...localCreated, ...mockAuctions].map(item => ({
-      ...item,
-      status: 1,
-      endTime: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString()
-    }))
-    hotAuctions.value = combinedList.slice(0, 12)
+    hotAuctions.value = []
   } finally {
     loading.value = false
   }
