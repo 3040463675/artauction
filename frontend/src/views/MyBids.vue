@@ -77,11 +77,10 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { CircleCheckFilled, Delete, Picture, Clock } from '@element-plus/icons-vue'
+import { Delete, Picture, Clock } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getMyBids } from '@/api/auction'
 import { useUserStore } from '@/stores/user'
-import type { Auction } from '@/types'
 import { mockAuctions } from '@/utils/mockData'
 import { formatPrice } from '@/utils/format'
 
@@ -140,8 +139,8 @@ const fetchMyBids = async () => {
         resultBids.push({
           id: id,
           ...saved,
-          title: mockInfo?.artwork.name || saved.title,
-          imageUrl: mockInfo?.artwork.imageUrl || saved.imageUrl
+          title: mockInfo?.artwork?.name || saved.title,
+          imageUrl: mockInfo?.artwork?.imageUrl || saved.imageUrl
         })
       })
 
@@ -156,8 +155,8 @@ const fetchMyBids = async () => {
             
             resultBids.push({
               id: mock.auctionId,
-              title: mock.artwork.name,
-              imageUrl: mock.artwork.imageUrl,
+              title: mock.artwork?.name || '未命名作品',
+              imageUrl: mock.artwork?.imageUrl || '',
               currentPrice: mock.highestBid,
               myPrice: (Number(mock.highestBid) - 0.2).toFixed(1),
               endTime: new Date(Date.now() + 86400000 * (index + 1)).toISOString(),

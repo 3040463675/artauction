@@ -17,7 +17,7 @@
           <el-radio-button value="all">全部</el-radio-button>
           <el-radio-button value="pending">待审核</el-radio-button>
           <el-radio-button value="ready">可拍卖</el-radio-button>
-          <el-radio-button value="auctioning">拍卖中</el-radio-button>
+          <el-radio-button value="sold">已拍出</el-radio-button>
         </el-radio-group>
       </div>
 
@@ -29,7 +29,12 @@
                 <el-card class="artwork-card clickable" shadow="hover" @click="viewDetail(item)">
                   <div class="image-wrapper">
                     <el-image :src="item.imageUrl" fit="cover" class="artwork-image" />
-                    <el-tag class="status-badge" :type="getStatusTagType(item)">
+                    <el-tag
+                      class="status-badge"
+                      :class="`status-${getStatusKey(item)}`"
+                      :type="getStatusTagType(item)"
+                      :effect="getStatusTagEffect(item)"
+                    >
                       {{ getStatusText(item) }}
                     </el-tag>
                   </div>
@@ -41,17 +46,6 @@
                     </div>
                   </div>
                 </el-card>
-                <div class="card-actions">
-                  <el-button 
-                    type="danger" 
-                    :icon="Delete" 
-                    circle 
-                    size="small"
-                    :disabled="item.isOnAuction"
-                    @click.stop="handleDelete(item)"
-                    title="删除作品"
-                  />
-                </div>
               </div>
             </el-col>
           </el-row>
@@ -67,9 +61,9 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { Plus, Delete } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { getArtworksByOwner, deleteArtwork } from '@/api/artwork'
+import { Plus } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { getArtworksByOwner } from '@/api/artwork'
 import { useUserStore } from '@/stores/user'
 
 interface MyArtworkItem {
@@ -83,7 +77,10 @@ interface MyArtworkItem {
   auctions?: Array<{
     id?: number
     auctionId?: number
+    status?: number
+    highestBidder?: string | null
     createdAt?: string | number
+    updatedAt?: string | number
   }>
 }
 
@@ -93,9 +90,17 @@ const loading = ref(false)
 const artworks = ref<MyArtworkItem[]>([])
 const statusFilter = ref('all')
 
+const getLatestAuction = (item: MyArtworkItem) => {
+  return (item.auctions || []).slice().sort((a, b) =>
+    new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime()
+  )[0]
+}
+
 const getStatusKey = (item: MyArtworkItem) => {
   if (!item.isVerified) return 'pending'
-  if (item.isOnAuction) return 'auctioning'
+
+  const latestAuction = getLatestAuction(item)
+  if (latestAuction?.status === 4 && latestAuction.highestBidder) return 'sold'
   return 'ready'
 }
 
@@ -123,9 +128,7 @@ const goToCreate = () => {
 }
 
 const viewDetail = (item: MyArtworkItem) => {
-  const latestAuction = (item.auctions || []).slice().sort((a, b) =>
-    new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
-  )[0]
+  const latestAuction = getLatestAuction(item)
 
   const targetId = latestAuction?.auctionId || latestAuction?.id
   if (!targetId) {
@@ -139,51 +142,20 @@ const viewDetail = (item: MyArtworkItem) => {
 const getStatusText = (item: MyArtworkItem) => {
   const key = getStatusKey(item)
   if (key === 'pending') return '待审核'
-  if (key === 'ready') return '可拍卖'
-  return '拍卖中'
+  if (key === 'sold') return '已拍出'
+  return '可拍卖'
 }
 
 const getStatusTagType = (item: MyArtworkItem) => {
   const key = getStatusKey(item)
   if (key === 'pending') return 'warning'
-  if (key === 'ready') return 'success'
-  return 'danger'
+  if (key === 'sold') return 'info'
+  return 'success'
 }
 
-const handleDelete = async (item: MyArtworkItem) => {
-  if (item.isOnAuction) {
-    ElMessage.warning('拍卖中的作品不能删除')
-    return
-  }
-
-  try {
-    await ElMessageBox.confirm(
-      '确定要删除这件艺术品吗？删除后不可恢复。',
-      '确认删除',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
-
-    const id = item.id
-    if (!id) {
-      ElMessage.error('无法定位作品ID')
-      return
-    }
-    
-    // 调用后端删除
-    await deleteArtwork(id)
-
-    // 刷新列表
-    ElMessage.success('作品已删除')
-    fetchMyArtworks()
-  } catch (error: any) {
-    if (error !== 'cancel') {
-      ElMessage.error(error.message || '删除失败')
-    }
-  }
+const getStatusTagEffect = (item: MyArtworkItem) => {
+  const key = getStatusKey(item)
+  return key === 'sold' ? 'dark' : 'light'
 }
 
 onMounted(() => {
@@ -233,23 +205,7 @@ onMounted(() => {
   min-height: 400px;
 
   .artwork-card-wrapper {
-    position: relative;
     margin-bottom: 24px;
-
-    .card-actions {
-      position: absolute;
-      top: 12px;
-      right: 12px;
-      z-index: 10;
-      opacity: 0;
-      transition: opacity 0.3s;
-    }
-
-    &:hover {
-      .card-actions {
-        opacity: 1;
-      }
-    }
   }
 }
 
@@ -293,15 +249,14 @@ onMounted(() => {
       padding: 4px 12px;
       border-radius: 20px;
       font-size: 12px;
-      font-weight: 600;
+      font-weight: 700;
       color: #fff;
       backdrop-filter: blur(4px);
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
 
-      &.auctioning {
-        background: rgba(34, 197, 94, 0.9);
-      }
-      &.ended {
-        background: rgba(100, 116, 139, 0.9);
+      &.status-sold {
+        background: #475569;
+        border: 1px solid rgba(255, 255, 255, 0.28);
       }
     }
   }

@@ -67,13 +67,15 @@ const handleEnded = () => {
   internalEnded.value = true
 }
 
-const displayStatus = computed(() => {
+type TagType = 'primary' | 'success' | 'info' | 'warning' | 'danger'
+
+const displayStatus = computed<{ text: string, type: TagType }>(() => {
   if (isEnded.value) {
     if (props.auction.status === 3) return { text: '已流拍', type: 'danger' }
     return { text: '已结束', type: 'info' }
   }
   
-  const statusMap: Record<number, { text: string, type: string }> = {
+  const statusMap: Record<number, { text: string, type: TagType }> = {
     0: { text: '待开始', type: 'warning' },
     1: { text: '进行中', type: 'success' }
   }

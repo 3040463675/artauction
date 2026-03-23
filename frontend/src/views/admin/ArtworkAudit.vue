@@ -170,7 +170,7 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Picture } from '@element-plus/icons-vue'
-import { getArtworks, deleteArtwork, verifyArtwork, rejectArtwork } from '@/api/artwork'
+import { getArtworks, verifyArtwork, rejectArtwork } from '@/api/artwork'
 import dayjs from 'dayjs'
 
 const loading = ref(false)
@@ -267,27 +267,6 @@ const handleReject = async (row: any) => {
   } catch (error) {
     if (error !== 'cancel') {
       ElMessage.error('操作失败')
-    }
-  }
-}
-
-// 删除作品 (保留作为备用)
-const handleDelete = async (row: any) => {
-  try {
-    await ElMessageBox.confirm('确定删除该作品吗？此操作不可撤销，且会同时移除相关的拍卖信息。', '严重警告', {
-      confirmButtonText: '确定删除',
-      cancelButtonText: '取消',
-      type: 'warning'
-    })
-    
-    const res = await deleteArtwork(row.id)
-    if (res.code === 0 || res.code === 200) {
-      ElMessage.success('删除成功')
-      fetchData()
-    }
-  } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error('删除失败')
     }
   }
 }

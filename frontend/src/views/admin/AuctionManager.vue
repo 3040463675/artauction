@@ -127,7 +127,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getAuctions, getBidHistory, toggleHotAuction, deleteAuction } from '@/api/auction'
 import dayjs from 'dayjs'
@@ -148,7 +148,13 @@ const queryParams = reactive({
 
 const filteredList = computed(() => {
   if (filterStatus.value === 'active') {
-    return list.value.filter(item => item.status === 1)
+    return list.value.filter(item => Number(item.status) === 1)
+  }
+  if (filterStatus.value === 'all') {
+    return list.value.filter(item => Number(item.status) === 4)
+  }
+  if (filterStatus.value === 'ended') {
+    return list.value.filter(item => [2, 3].includes(Number(item.status)))
   }
   return list.value
 })
@@ -156,7 +162,18 @@ const filteredList = computed(() => {
 const fetchData = async () => {
   loading.value = true
   try {
-    const res = await getAuctions(queryParams)
+    const params: any = {
+      ...queryParams,
+      includeSettled: true
+    }
+
+    if (filterStatus.value === 'active') {
+      params.status = 1
+    } else if (filterStatus.value === 'all') {
+      params.status = 4
+    }
+
+    const res = await getAuctions(params)
     // 兼容后端可能返回的 0 或 200 成功码
     if (res.code === 0 || res.code === 200) {
       list.value = res.data.list.map((item: any) => ({ ...item, hotLoading: false }))
@@ -232,18 +249,23 @@ const viewBidHistory = async (row: any) => {
 }
 
 const getStatusType = (status: number) => {
-  const types: any = { 0: 'info', 1: 'success', 2: 'warning', 3: 'danger' }
+  const types: any = { 0: 'info', 1: 'success', 2: 'warning', 3: 'danger', 4: 'success' }
   return types[status] || 'info'
 }
 
 const getStatusText = (status: number) => {
-  const texts: any = { 0: '待开始', 1: '进行中', 2: '已成交', 3: '已流拍' }
+  const texts: any = { 0: '待开始', 1: '进行中', 2: '已结束', 3: '已流拍', 4: '已拍卖' }
   return texts[status] || '未知'
 }
 
 const formatDate = (date: string) => {
   return dayjs(date).format('YYYY-MM-DD HH:mm:ss')
 }
+
+watch(filterStatus, () => {
+  queryParams.page = 1
+  fetchData()
+})
 
 onMounted(() => {
   fetchData()

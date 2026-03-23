@@ -16,14 +16,6 @@
           </template>
         </el-input>
 
-        <el-select v-model="statusFilter" placeholder="状态筛选" @change="handleFilter">
-          <el-option label="全部" value="all" />
-          <el-option label="进行中" :value="1" />
-          <el-option label="即将结束 (1小时内)" value="endingSoon" />
-          <el-option label="最新发布 (1小时内)" value="newlyAdded" />
-          <el-option label="已结束" :value="4" />
-        </el-select>
-
         <el-select v-model="sortBy" placeholder="排序方式" @change="handleFilter">
           <el-option label="默认排序" value="default" />
           <el-option label="价格: 从高到低" value="priceDesc" />
@@ -73,7 +65,7 @@ import { useRouter } from 'vue-router'
 import { getAuctions } from '@/api/auction'
 import AuctionCard from '@/components/AuctionCard.vue'
 import { ElMessage } from 'element-plus'
-import { Search, Sort, Filter } from '@element-plus/icons-vue'
+import { Search } from '@element-plus/icons-vue'
 
 const router = useRouter()
 
@@ -84,7 +76,6 @@ const page = ref(1)
 const pageSize = ref(12)
 
 const keyword = ref('')
-const statusFilter = ref<number | string>('all')
 const sortBy = ref('endTime')
 
 // 防抖搜索
@@ -99,19 +90,14 @@ watch(keyword, () => {
 const fetchAuctions = async () => {
   loading.value = true
   try {
-    const isSpecialFilter = ['endingSoon', 'newlyAdded'].includes(statusFilter.value as string)
-    const isEndedFilter = statusFilter.value === 4
-
     const res = await getAuctions({
       page: page.value,
       pageSize: pageSize.value,
-      status: (isSpecialFilter || isEndedFilter || statusFilter.value === 'all') ? undefined : statusFilter.value as number,
-      keyword: keyword.value,
-      sortBy: sortBy.value === 'default' ? 'newest' : sortBy.value
+      keyword: keyword.value
     })
     
     // 100% 数据库同步：直接使用后端返回的数据
-    auctions.value = res.data?.list || []
+    auctions.value = sortAuctions(res.data?.list || [])
     total.value = res.data?.total || 0
   } catch (error) {
     console.error('Failed to fetch auctions:', error)
@@ -126,6 +112,28 @@ const fetchAuctions = async () => {
 const handleSearch = () => {
   page.value = 1
   fetchAuctions()
+}
+
+const sortAuctions = (list: any[]) => {
+  const getAuctionPrice = (auction: any) => {
+    const starting = Number(auction?.startingPrice)
+    if (Number.isFinite(starting)) return starting
+    const highest = Number(auction?.highestBid)
+    if (Number.isFinite(highest)) return highest
+    return 0
+  }
+
+  const cloned = [...list]
+  if (sortBy.value === 'priceDesc') {
+    return cloned.sort((a, b) => getAuctionPrice(b) - getAuctionPrice(a))
+  }
+  if (sortBy.value === 'priceAsc') {
+    return cloned.sort((a, b) => getAuctionPrice(a) - getAuctionPrice(b))
+  }
+  if (sortBy.value === 'endTime') {
+    return cloned.sort((a, b) => new Date(a.endTime).getTime() - new Date(b.endTime).getTime())
+  }
+  return cloned
 }
 
 const handleFilter = () => {

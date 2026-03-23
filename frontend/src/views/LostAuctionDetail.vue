@@ -17,7 +17,7 @@
                 :src="auction.artwork?.imageUrl"
                 fit="contain"
                 class="main-image"
-                :preview-src-list="[auction.artwork?.imageUrl]"
+                :preview-src-list="auction.artwork?.imageUrl ? [auction.artwork.imageUrl] : []"
               />
               <div class="lost-overlay">
                 <el-icon class="close-icon"><CircleClose /></el-icon>
@@ -133,7 +133,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { ArrowLeft, User, ArrowDown, ArrowUp, CircleClose, StarFilled } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { getAuctionById } from '@/api/auction'
@@ -143,7 +143,6 @@ import type { Auction } from '@/types'
 import dayjs from 'dayjs'
 
 const route = useRoute()
-const router = useRouter()
 const userStore = useUserStore()
 
 const loading = ref(false)
@@ -158,9 +157,17 @@ const displayedBids = computed(() => {
   return bidHistory.value.slice(0, 4)
 })
 
-const isMe = (addr: string) => addr?.toLowerCase() === userStore.address?.toLowerCase()
+const resolveAddress = (input: any) => {
+  if (!input) return ''
+  if (typeof input === 'string') return input
+  if (typeof input === 'object' && typeof input.address === 'string') return input.address
+  return ''
+}
 
-const formatAddress = (addr: string) => {
+const isMe = (input: any) => resolveAddress(input).toLowerCase() === userStore.address?.toLowerCase()
+
+const formatAddress = (input: any) => {
+  const addr = resolveAddress(input)
   if (!addr) return 'Unknown'
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`
 }
@@ -178,7 +185,7 @@ const fetchDetail = async () => {
   const localMockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
   const savedBid = localMockBids[id]
 
-  const isMock = id.startsWith('mock-') || isNaN(Number(id)) || (Number(id) >= 100 && Number(id) < 200)
+  const isMock = id.startsWith('mock-') || isNaN(Number(id))
   
   if (isMock) {
     const foundMock = mockAuctions.find(m => m.auctionId === id)

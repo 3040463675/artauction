@@ -67,7 +67,7 @@
                   <el-input
                     v-model="profileForm.bio"
                     type="textarea"
-                    rows="4"
+                    :rows="4"
                     placeholder="介绍一下你自己..."
                   />
                 </el-form-item>

@@ -19,7 +19,7 @@
                 :src="auction.artwork?.imageUrl"
                 fit="cover"
                 class="main-image"
-                :preview-src-list="[auction.artwork?.imageUrl]"
+                :preview-src-list="auction.artwork?.imageUrl ? [auction.artwork.imageUrl] : []"
               />
               <div class="verified-badge" v-if="auction.artwork?.isVerified">
                 <el-icon><CircleCheckFilled /></el-icon>
@@ -69,7 +69,7 @@
                 </el-tag>
               </div>
               <div class="status-tags">
-                <el-tag :type="getStatusType(auction.status)" effect="dark">
+                <el-tag :type="getStatusType(auction.status as number)" effect="dark">
                   {{ getStatusText(auction.status) }}
                 </el-tag>
                 <el-tag type="info" v-if="auction.txHash">
@@ -124,7 +124,7 @@
                     <span class="amount">{{ formatPrice(auction.highestBid || auction.startingPrice) }}</span>
                     <span class="unit">ETH</span>
                   </div>
-                  <div class="reserve-status" v-if="auction.reservePrice > 0">
+                  <div class="reserve-status" v-if="Number(auction.reservePrice) > 0">
                     <el-tooltip :content="'保留价: ' + formatPrice(auction.reservePrice) + ' ETH'" placement="top">
                       <span class="reserve-label">
                         <el-icon><Lock /></el-icon>
@@ -175,21 +175,21 @@
 
                   <div class="action-buttons">
                     <el-button
-                      :type="battleState === 'success' ? 'info' : 'primary'"
+                      type="primary"
                       size="large"
                       class="bid-btn premium-btn"
                       :loading="bidding"
                       :disabled="isCancelled || battleState !== 'active'"
                       @click="handleBid"
                     >
-                      {{ battleState === 'success' ? '已成交' : '参与竞拍' }}
+                      参与竞拍
                     </el-button>
                     <el-button
                       type="danger"
                       size="large"
                       class="cancel-btn"
                       plain
-                      :disabled="isCancelled || battleState === 'success'"
+                      :disabled="isCancelled"
                       @click="handleCancelBid"
                     >
                       退出竞拍
@@ -266,7 +266,7 @@
                 </div>
                 <div class="prop-card">
                   <span class="p-label">创建时间</span>
-                  <span class="p-value">{{ formatTime(auction.artwork?.createdAt) }}</span>
+                  <span class="p-value">{{ formatTime(auction.artwork?.createdAt || '') }}</span>
                 </div>
                 <div class="prop-card">
                   <span class="p-label">创作者版税</span>
@@ -286,18 +286,16 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  User, Wallet, Link, Lock,
+  User, Link, Lock,
   CircleCheckFilled, TopRight, Clock
 } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
 import { useUserStore } from '@/stores/user'
-import { placeBid, endAuction } from '@/utils/contracts'
+import { endAuction } from '@/utils/contracts'
 import { getAuctionById, getBidHistory, recordBid, updateAuctionStatus } from '@/api/auction'
 import CountdownTimer from '@/components/CountdownTimer.vue'
 import { mockAuctions } from '@/utils/mockData'
 import { formatPrice } from '@/utils/format'
-
-import type { Auction, Bid } from '@/types'
 
 // ==========================================
 // 状态变量
@@ -314,7 +312,7 @@ const battleState = ref<'waiting' | 'active' | 'success' | 'cancelled'>('waiting
 const isFirstLoad = ref(true)
 const pendingBotTimer = ref<any>(null)
 
-const auction = ref<Auction | null>(null)
+const auction = ref<any>(null)
 const bidHistory = ref<any[]>([])
 const bidAmount = ref(0)
 const activeTab = ref('desc')
@@ -325,11 +323,6 @@ const activeTab = ref('desc')
 
 const makeRandomAddress = () =>
   '0x' + Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join('')
-
-const truncateAddress = (address: string) => {
-  if (!address || address.length < 10) return address
-  return `${address.slice(0, 6)}...${address.slice(-4)}`
-}
 
 const makeBotBid = (basePrice: number, minInc: number, timeOffset: number) => {
   const inc = minInc * (Math.random() * 2 + 0.5)
@@ -558,44 +551,69 @@ const handleBid = async () => {
 }
 
 // 退出竞拍
-const handleCancelBid = () => {
-  ElMessageBox.confirm(
-    '您确定要退出竞拍并取消出价吗？', '操作确认',
-    { confirmButtonText: '确定', cancelButtonText: '我再想想', type: 'warning' }
-  ).catch(() => {})
+const handleCancelBid = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '您确定要退出竞拍吗？系统将按当前最高出价结算，作品归属最高出价者。',
+      '操作确认',
+      { confirmButtonText: '确定', cancelButtonText: '我再想想', type: 'warning' }
+    )
+  } catch {
+    return
+  }
 
+  if (!auction.value) return
   if (pendingBotTimer.value) { clearTimeout(pendingBotTimer.value); pendingBotTimer.value = null }
 
-  isCancelled.value = true
+  const sortedBids = [...bidHistory.value].sort((a, b) => Number(b.amount || 0) - Number(a.amount || 0))
+  const topBid = sortedBids[0]
+  const finalHighestBid = Number(topBid?.amount || auction.value.highestBid || 0)
+  const finalHighestBidder = topBid?.bidderAddress || auction.value.highestBidder
+
+  if (!finalHighestBidder || finalHighestBid <= 0) {
+    ElMessage.warning('当前没有有效最高出价，无法执行结算')
+    return
+  }
+
   settleTime.value = dayjs().format('YYYY-MM-DD HH:mm:ss')
+  isCancelled.value = true
   battleState.value = 'cancelled'
 
-  const currentHighest = Number(auction.value.highestBid) || 1
-  const inc = Number(auction.value.minIncrement) || 0.1
-  const botBid = makeBotBid(currentHighest + inc * 0.1, inc, 0)
-  bidHistory.value = [botBid, ...bidHistory.value]
-  auction.value.highestBid = botBid.amount.toString()
-  auction.value.highestBidder = botBid.bidderAddress
+  auction.value.highestBid = finalHighestBid.toString()
+  auction.value.highestBidder = finalHighestBidder
+  auction.value.status = 4
+  auction.value.endTime = settleTime.value
 
   const myBid = bidHistory.value.find(
     b => b.bidderAddress?.toLowerCase() === userStore.address?.toLowerCase()
   )
+  const isWinner = finalHighestBidder.toLowerCase() === userStore.address?.toLowerCase()
   const mockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
   mockBids[auction.value.auctionId] = {
     id: auction.value.auctionId,
     title: auction.value.artwork?.name,
     imageUrl: auction.value.artwork?.imageUrl,
-    currentPrice: botBid.amount.toString(),
+    currentPrice: finalHighestBid.toString(),
     myPrice: myBid?.amount,
     endTime: settleTime.value,
-    bidStatus: 'lost'
+    bidStatus: isWinner ? 'won' : 'lost'
   }
   localStorage.setItem('MOCK_USER_BIDS', JSON.stringify(mockBids))
 
+  try {
+    await updateAuctionStatus(auction.value.auctionId, {
+      status: 4,
+      highestBid: finalHighestBid,
+      highestBidder: finalHighestBidder
+    })
+  } catch (err) {
+    console.error('Failed to settle auction on cancel:', err)
+  }
+
   ElMessageBox.alert(
-    `您已成功退出竞拍。目前最高价由 ${botBid.bidderName} 持有，价格为 ${formatPrice(botBid.amount)} ETH。`,
-    '已退出',
-    { confirmButtonText: '确定', type: 'info' }
+    `已按最高出价完成结算，作品归属 ${formatAddress(finalHighestBidder)}，成交价 ${formatPrice(finalHighestBid)} ETH。`,
+    '已退出并结算',
+    { confirmButtonText: '确定', type: 'success' }
   )
 }
 
@@ -645,12 +663,13 @@ const formatTime = (time: string | number | Date) => {
 const getExplorerUrl = (txHash: string) =>
   `https://sepolia.etherscan.io/tx/${txHash}`
 
-const getStatusType = (status: number) => {
+const getStatusType = (status: number): 'primary' | 'success' | 'info' | 'warning' | 'danger' => {
   if (battleState.value === 'success') return 'info'
   if (isCancelled.value) return 'danger'
-  return {
+  const map: Record<number, 'primary' | 'success' | 'info' | 'warning' | 'danger'> = {
     0: 'warning', 1: 'success', 2: 'info', 3: 'danger', 4: 'info'
-  }[status] || 'info'
+  }
+  return map[status] || 'info'
 }
 
 const getStatusText = (status: number) => {
@@ -773,7 +792,7 @@ const handleEndAuction = async () => {
       ElMessage.success('拍卖已结束')
     }
   } else {
-    await endAuction(auction.value.auctionId)
+    await endAuction(Number(auction.value.auctionId))
     ElMessage.success('合约操作成功：拍卖已结算')
     setTimeout(fetchAuctionDetail, 5000)
   }

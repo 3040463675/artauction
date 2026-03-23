@@ -85,7 +85,6 @@ import { ElMessage } from 'element-plus'
 import { formatPrice } from '@/utils/format'
 import { getMyAuctions, getMyBids } from '@/api/auction'
 import { 
-  User, 
   CopyDocument, 
   Picture, 
   Collection, 

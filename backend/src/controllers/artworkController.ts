@@ -3,6 +3,8 @@ import { Op } from 'sequelize'
 import { Artwork, User, Category, Auction, AuctionStatus } from '../models'
 import { AppError } from '../middleware/error'
 
+const AUCTION_DURATION_MS = 15 * 24 * 60 * 60 * 1000
+
 // 获取艺术品列表
 export const getArtworks = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -95,11 +97,22 @@ export const getArtworksByOwner = async (req: Request, res: Response, next: Next
       throw new AppError('地址不能为空', -1, 400)
     }
 
+    const ownerAddress = String(address)
+    const creatorUser = await User.findOne({ where: { address: ownerAddress }, attributes: ['id'] })
+    const creatorId = creatorUser?.id
+
     const artworks = await Artwork.findAll({
-      where: { ownerAddress: address },
+      where: creatorId
+        ? {
+            [Op.or]: [
+              { ownerAddress: ownerAddress },
+              { creatorId }
+            ]
+          }
+        : { ownerAddress: ownerAddress },
       include: [
         { model: User, as: 'creator', attributes: ['id', 'address', 'username', 'avatar'] },
-        { model: Auction, as: 'auctions', required: false, attributes: ['id', 'auctionId', 'status', 'createdAt'] }
+        { model: Auction, as: 'auctions', required: false, attributes: ['id', 'auctionId', 'status', 'highestBidder', 'createdAt', 'updatedAt'] }
       ],
       order: [['createdAt', 'DESC']]
     })
@@ -202,7 +215,7 @@ export const verifyArtwork = async (req: Request, res: Response, next: NextFunct
         })
         const nextAuctionId = (Number(latestAuction?.auctionId) || 0) + 1
         const startTime = new Date()
-        const endTime = new Date(startTime.getTime() + 3 * 24 * 60 * 60 * 1000)
+        const endTime = new Date(startTime.getTime() + AUCTION_DURATION_MS)
 
         await Auction.create({
           auctionId: nextAuctionId,
@@ -218,7 +231,7 @@ export const verifyArtwork = async (req: Request, res: Response, next: NextFunct
         })
       } else if (activeAuction.status === AuctionStatus.Pending) {
         const startTime = new Date()
-        const endTime = new Date(startTime.getTime() + 3 * 24 * 60 * 60 * 1000)
+        const endTime = new Date(startTime.getTime() + AUCTION_DURATION_MS)
         await activeAuction.update({
           status: AuctionStatus.Active,
           startingPrice,

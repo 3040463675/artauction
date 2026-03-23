@@ -174,10 +174,8 @@ const seedDatabase = async () => {
       // 创建拍卖
       const numericId = 100 + i // 使用 100+ 作为模拟拍卖的 ID
       
-      // 随机生成 1 小时到 48 小时 (2天) 之间的时间戳
-      const oneHour = 3600 * 1000
-      const twoDays = 48 * 3600 * 1000
-      const randomEndTime = new Date(Date.now() + Math.floor(Math.random() * (twoDays - oneHour) + oneHour))
+      // 统一设置为 15 天结束
+      const fixedEndTime = new Date(Date.now() + 15 * 24 * 3600 * 1000)
 
       // 查找或创建拍卖
       const [auctionRecord, created] = await Auction.findOrCreate({
@@ -190,17 +188,17 @@ const seedDatabase = async () => {
           reservePrice: data.start,
           minIncrement: data.increment,
           startTime: new Date(),
-          endTime: randomEndTime,
+          endTime: fixedEndTime,
           highestBid: data.price,
           status: AuctionStatus.Active,
           isHot: (data as any).isHot || false
         }
       })
 
-      // 如果已存在，更新其结束时间以应用随机化
+      // 如果已存在，更新其结束时间为统一 15 天
       if (!created) {
         await auctionRecord.update({
-          endTime: randomEndTime,
+          endTime: fixedEndTime,
           isHot: (data as any).isHot || false
         })
       }

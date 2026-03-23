@@ -90,22 +90,48 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { 
-  User, 
-  Picture, 
-  Wallet, 
-  TrendCharts 
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import {
+  User,
+  Picture,
+  Wallet,
+  TrendCharts
 } from '@element-plus/icons-vue'
+import { getArtworks } from '@/api/artwork'
 
 const timeRange = ref('7d')
+const artworkTotal = ref('0')
+let pollTimer: ReturnType<typeof setInterval> | null = null
 
-const stats = [
+const fetchArtworkTotal = async () => {
+  try {
+    const res = await getArtworks({ page: 1, pageSize: 1 })
+    if (res.code === 0 || res.code === 200) {
+      artworkTotal.value = String(res.data?.total ?? 0)
+    }
+  } catch (error) {
+    console.error('获取作品总量失败:', error)
+  }
+}
+
+const stats = computed(() => [
   { label: '注册用户', value: '1,284', icon: User, color: '#409eff', trend: 12 },
-  { label: '作品总量', value: '3,592', icon: Picture, color: '#67c23a', trend: 8 },
+  { label: '作品总量', value: artworkTotal.value, icon: Picture, color: '#67c23a', trend: 8 },
   { label: '成交总额', value: '158.42', isPrice: true, icon: Wallet, color: '#e6a23c', trend: 24 },
   { label: '活跃拍卖', value: '42', icon: TrendCharts, color: '#f56c6c', trend: -5 }
-]
+])
+
+onMounted(() => {
+  fetchArtworkTotal()
+  pollTimer = setInterval(fetchArtworkTotal, 10000)
+})
+
+onUnmounted(() => {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+})
 </script>
 
 <style lang="scss" scoped>

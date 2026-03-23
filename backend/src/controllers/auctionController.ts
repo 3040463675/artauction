@@ -3,6 +3,8 @@ import { Op } from 'sequelize'
 import { Auction, Artwork, User, Bid, AuctionStatus } from '../models'
 import { AppError } from '../middleware/error'
 
+const AUCTION_DURATION_SECONDS = 15 * 24 * 60 * 60
+
 // 获取拍卖列表
 export const getAuctions = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -11,7 +13,8 @@ export const getAuctions = async (req: Request, res: Response, next: NextFunctio
       pageSize = 12,
       status,
       keyword,
-      sortBy = 'endTime'
+      sortBy = 'endTime',
+      includeSettled
     } = req.query
 
     const offset = (Number(page) - 1) * Number(pageSize)
@@ -22,7 +25,7 @@ export const getAuctions = async (req: Request, res: Response, next: NextFunctio
     // 状态筛选：如果未指定状态，默认排除“已成交/已下架” (Settled = 4)
     if (status !== undefined && status !== '') {
       where.status = Number(status)
-    } else {
+    } else if (!(String(includeSettled).toLowerCase() === 'true' || includeSettled === '1')) {
       where.status = { [Op.ne]: AuctionStatus.Settled }
     }
 
@@ -292,7 +295,6 @@ export const createAuction = async (req: Request, res: Response, next: NextFunct
       startingPrice,
       reservePrice,
       minIncrement,
-      duration,
       txHash
     } = req.body
 
@@ -303,7 +305,7 @@ export const createAuction = async (req: Request, res: Response, next: NextFunct
     }
 
     const startTime = new Date()
-    const endTime = new Date(startTime.getTime() + duration * 1000)
+    const endTime = new Date(startTime.getTime() + AUCTION_DURATION_SECONDS * 1000)
 
     const auction = await Auction.create({
       auctionId,
@@ -344,11 +346,25 @@ export const updateAuctionStatus = async (req: Request, res: Response, next: Nex
       throw new AppError('拍卖不存在', -1, 404)
     }
 
+    const nextStatus = Number(status)
+
     await auction.update({
-      status,
+      status: nextStatus,
       highestBid: highestBid || auction.highestBid,
       highestBidder: highestBidder || auction.highestBidder
     })
+
+    if (nextStatus === AuctionStatus.Settled) {
+      const winner = highestBidder || auction.highestBidder || auction.sellerAddress
+      await Artwork.update(
+        { isOnAuction: false, ownerAddress: winner },
+        { where: { id: auction.artworkId } }
+      )
+    } else if ([AuctionStatus.Ended, AuctionStatus.Cancelled].includes(nextStatus)) {
+      await Artwork.update({ isOnAuction: false }, { where: { id: auction.artworkId } })
+    } else if ([AuctionStatus.Pending, AuctionStatus.Active].includes(nextStatus)) {
+      await Artwork.update({ isOnAuction: true }, { where: { id: auction.artworkId } })
+    }
 
     res.success(auction)
   } catch (error) {
