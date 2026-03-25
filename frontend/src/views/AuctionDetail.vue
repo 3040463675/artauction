@@ -713,6 +713,15 @@ const fetchAuctionDetail = async () => {
         battleState.value = 'success'
         isCancelled.value = true
         settleTime.value = savedBid.endTime
+      } else if (savedBid?.bidStatus === 'lost') {
+        // 已竞拍失败：强制显示为已结束且不可再操作
+        auction.value.highestBid = savedBid.currentPrice || auction.value.highestBid
+        // 保留原最高出价者（可能是机器人或他人），无需等于我
+        auction.value.status = 4
+        auction.value.endTime = savedBid.endTime || Date.now()
+        battleState.value = 'cancelled'
+        isCancelled.value = true
+        settleTime.value = savedBid.endTime || dayjs().format('YYYY-MM-DD HH:mm:ss')
       } else {
         auction.value.status = 1
         auction.value.endTime = Date.now() + 3 * 24 * 60 * 60 * 1000

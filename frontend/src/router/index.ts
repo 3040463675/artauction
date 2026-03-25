@@ -6,6 +6,12 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/',
     name: 'Home',
+    component: () => import('@/views/LoginLanding.vue'),
+    meta: { title: '登录', hideChrome: true }
+  },
+  {
+    path: '/explore',
+    name: 'Explore',
     component: () => import('@/views/Home.vue'),
     meta: { title: '首页' }
   },
@@ -108,26 +114,23 @@ const router = createRouter({
   }
 })
 
-// 路由守卫
 router.beforeEach((to: RouteLocationNormalized, _from: RouteLocationNormalized, next: NavigationGuardNext) => {
   // 设置页面标题
   document.title = `${String(to.meta.title) || 'ArtChain'} - 艺术品竞拍系统`
 
-  // 检查是否需要登录
-  if (to.meta.requiresAuth) {
-    const userStore = useUserStore()
-    if (!userStore.isConnected) {
+  const userStore = useUserStore()
+  if (to.name === 'Home' && userStore.isConnected && userStore.role !== 'admin') {
+    next({ name: 'Explore' })
+    return
+  }
+  if (to.meta.requiresAdmin) {
+    if (userStore.role !== 'admin') {
       next({ name: 'Home', query: { redirect: to.fullPath } })
       return
     }
-  }
-
-  // 检查是否需要管理员权限
-  if (to.meta.requiresAdmin) {
-    const userStore = useUserStore()
-    if (userStore.role !== 'admin') {
-      ElMessage.error('权限不足，仅限管理员访问')
-      next({ name: 'Home' })
+  } else if (to.meta.requiresAuth) {
+    if (!userStore.isConnected) {
+      next({ name: 'Home', query: { redirect: to.fullPath } })
       return
     }
   }

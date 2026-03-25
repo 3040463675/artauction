@@ -1,5 +1,6 @@
 import { ethers } from 'ethers'
 import { useUserStore } from '@/stores/user'
+import { request } from '@/api/request'
 
 declare global {
   interface Window {
@@ -36,6 +37,13 @@ export const connectWallet = async (): Promise<string> => {
     userStore.setAddress(address)
     userStore.setBalance(formattedBalance.slice(0, 6))
     userStore.setChainId(chainId)
+
+    // 确保数据库中存在该用户地址（触发后端创建或更新nonce）
+    try {
+      await request.get('/auth/nonce', { params: { address } })
+    } catch {
+      // 忽略后端不可用时的错误，保持前端连接流程不被打断
+    }
 
     return address
   } catch (error: any) {

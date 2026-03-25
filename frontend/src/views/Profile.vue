@@ -39,7 +39,7 @@
           <el-divider direction="vertical" />
           <div class="stat-item" @click="$router.push('/my-bids')">
             <div class="stat-value">{{ myBidsCount }}</div>
-            <div class="stat-label">参与竞拍</div>
+            <div class="stat-label">竞拍成功</div>
           </div>
         </div>
       </el-card>
@@ -79,11 +79,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useUserStore } from '@/stores/user'
 import { ElMessage } from 'element-plus'
 import { formatPrice } from '@/utils/format'
-import { getMyAuctions, getMyBids } from '@/api/auction'
+import { getMyBids } from '@/api/auction'
+import { getArtworksByOwner } from '@/api/artwork'
 import { 
   CopyDocument, 
   Picture, 
@@ -100,20 +101,32 @@ const myBidsCount = ref(0)
 const fetchStats = async () => {
   if (!userStore.address) return
   try {
-    const artworksRes = await getMyAuctions(userStore.address)
-    myArtworksCount.value = (artworksRes.data && artworksRes.data.length > 0) ? artworksRes.data.length : 1 // 模拟1个
-    
+    const artworksRes = await getArtworksByOwner(userStore.address)
+    myArtworksCount.value = Array.isArray(artworksRes.data) ? artworksRes.data.length : 0
+
     const bidsRes = await getMyBids(userStore.address)
-    myBidsCount.value = (bidsRes.data && bidsRes.data.length > 0) ? bidsRes.data.length : 3 // 模拟3个
+    if (Array.isArray(bidsRes.data)) {
+      const addr = String(userStore.address || '').toLowerCase()
+      myBidsCount.value = bidsRes.data.filter((a: any) => {
+        const highest = (a.highestBidder || '').toString().toLowerCase()
+        return highest && highest === addr && a.status !== 1
+      }).length
+    } else {
+      myBidsCount.value = 0
+    }
   } catch (e) {
-    myArtworksCount.value = 1
-    myBidsCount.value = 3
+    myArtworksCount.value = 0
+    myBidsCount.value = 0
   }
 }
 
-onMounted(() => {
-  fetchStats()
-})
+watch(
+  () => userStore.address,
+  (addr) => {
+    if (addr) fetchStats()
+  },
+  { immediate: true }
+)
 
 const roleName = computed(() => {
   const roles = {
@@ -134,8 +147,8 @@ const actions = [
     color: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
   },
   {
-    title: '我的竞拍',
-    desc: '查看参与的竞拍记录',
+    title: '竞拍成功',
+    desc: '查看竞拍成功的记录',
     path: '/my-bids',
     icon: Collection,
     color: 'linear-gradient(135deg, #2af598 0%, #009efd 100%)'

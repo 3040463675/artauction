@@ -114,17 +114,24 @@ const fetchMyBids = async () => {
     const deletedIds = JSON.parse(localStorage.getItem('MOCK_DELETED_BIDS') || '[]')
     
     if (res.data?.length > 0) {
+      const now = Date.now()
+      const myAddr = String(userStore.address || '').toLowerCase()
       bids.value = res.data
         .filter(item => !deletedIds.includes(item.id) && !deletedIds.includes(item.auctionId))
-        .map(item => ({
-          ...item,
-          myPrice: item.highestBid || item.startingPrice,
-          bidStatus: item.status === 1 ? 'active' : (item.highestBidder === userStore.address ? 'won' : 'lost'),
-          // 确保字段映射
-          title: item.artwork?.name,
-          imageUrl: item.artwork?.imageUrl,
-          currentPrice: item.highestBid || item.startingPrice
-        }))
+        .map(item => {
+          const endTime = new Date(item.endTime || 0).getTime()
+          const isEnded = item.status !== 1 || (endTime > 0 && endTime <= now)
+          const isWinner = String(item.highestBidder || '').toLowerCase() === myAddr
+          const bidStatus = isEnded ? (isWinner ? 'won' : 'lost') : 'active'
+          return {
+            ...item,
+            myPrice: item.highestBid || item.startingPrice,
+            bidStatus,
+            title: item.artwork?.name,
+            imageUrl: item.artwork?.imageUrl,
+            currentPrice: item.highestBid || item.startingPrice
+          }
+        })
     } else {
       const localMockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
       const resultBids: any[] = []

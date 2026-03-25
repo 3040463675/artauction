@@ -91,7 +91,7 @@ export const getArtworkById = async (req: Request, res: Response, next: NextFunc
 // 获取用户的艺术品
 export const getArtworksByOwner = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { address } = req.query
+    const { address, type } = req.query
 
     if (!address) {
       throw new AppError('地址不能为空', -1, 400)
@@ -101,15 +101,23 @@ export const getArtworksByOwner = async (req: Request, res: Response, next: Next
     const creatorUser = await User.findOne({ where: { address: ownerAddress }, attributes: ['id'] })
     const creatorId = creatorUser?.id
 
+    // type: 'created' | 'owned' | 'all'，默认为 'created'
+    const scope = String(type || 'created').toLowerCase()
+
+    let whereCond: any = {}
+    if (scope === 'owned') {
+      whereCond = { ownerAddress: ownerAddress }
+    } else if (scope === 'all') {
+      whereCond = creatorId
+        ? { [Op.or]: [{ ownerAddress: ownerAddress }, { creatorId }] }
+        : { ownerAddress: ownerAddress }
+    } else {
+      // 默认仅返回我发布的作品（创作者）
+      whereCond = creatorId ? { creatorId } : { creatorId: -1 } // 若找不到用户ID则返回空集
+    }
+
     const artworks = await Artwork.findAll({
-      where: creatorId
-        ? {
-            [Op.or]: [
-              { ownerAddress: ownerAddress },
-              { creatorId }
-            ]
-          }
-        : { ownerAddress: ownerAddress },
+      where: whereCond,
       include: [
         { model: User, as: 'creator', attributes: ['id', 'address', 'username', 'avatar'] },
         { model: Auction, as: 'auctions', required: false, attributes: ['id', 'auctionId', 'status', 'highestBidder', 'createdAt', 'updatedAt'] }
