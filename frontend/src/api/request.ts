@@ -27,6 +27,10 @@ service.interceptors.request.use(
         if (state?.address) {
           config.headers['x-user-address'] = state.address
         }
+        // 管理员模式下优先使用地址头鉴权，避免旧的 Buyer JWT 干扰
+        if (state?.role === 'admin' && config.headers.Authorization) {
+          delete (config.headers as any).Authorization
+        }
       } catch {
       }
     }
@@ -101,6 +105,10 @@ export const request = {
 
   put<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
     return service.put(url, data, config)
+  },
+
+  patch<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+    return service.patch(url, data, config)
   },
 
   delete<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {

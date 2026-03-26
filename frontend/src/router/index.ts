@@ -65,6 +65,12 @@ const routes: RouteRecordRaw[] = [
         name: 'AdminAuctions',
         component: () => import('@/views/admin/AuctionManager.vue'),
         meta: { title: '拍卖管理' }
+      },
+      {
+        path: 'users',
+        name: 'AdminUsers',
+        component: () => import('@/views/admin/AdminUsers.vue'),
+        meta: { title: '用户管理' }
       }
     ]
   },

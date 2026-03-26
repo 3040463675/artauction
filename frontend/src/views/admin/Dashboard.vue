@@ -10,7 +10,13 @@
     <!-- 统计卡片 -->
     <el-row :gutter="20" class="stats-row">
       <el-col :span="6" v-for="(item, index) in stats" :key="index">
-        <el-card shadow="hover" class="stat-card" :style="{ borderLeft: `4px solid ${item.color}` }">
+        <el-card
+          shadow="hover"
+          class="stat-card"
+          :class="{ clickable: !!item.route }"
+          :style="{ borderLeft: `4px solid ${item.color}` }"
+          @click="handleStatClick(item.route)"
+        >
           <div class="stat-content">
             <div class="stat-info">
               <span class="stat-label">{{ item.label }}</span>
@@ -91,6 +97,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   User,
   Picture,
@@ -98,10 +105,27 @@ import {
   TrendCharts
 } from '@element-plus/icons-vue'
 import { getArtworks } from '@/api/artwork'
+import { getUsers } from '@/api/user'
 
 const timeRange = ref('7d')
 const artworkTotal = ref('0')
+const userTotal = ref('0')
 let pollTimer: ReturnType<typeof setInterval> | null = null
+const router = useRouter()
+
+const formatCount = (value: number) => value.toLocaleString('zh-CN')
+
+const fetchUserTotal = async () => {
+  try {
+    const res: any = await getUsers({ page: 1, pageSize: 1 })
+    if (res.code === 0 || res.code === 200) {
+      const total = Number(res.data?.total ?? 0)
+      userTotal.value = formatCount(Number.isNaN(total) ? 0 : total)
+    }
+  } catch (error) {
+    console.error('获取用户总量失败:', error)
+  }
+}
 
 const fetchArtworkTotal = async () => {
   try {
@@ -114,16 +138,26 @@ const fetchArtworkTotal = async () => {
   }
 }
 
+const handleStatClick = (route?: string) => {
+  if (!route) return
+  router.push(route)
+}
+
+const refreshStats = () => {
+  fetchArtworkTotal()
+  fetchUserTotal()
+}
+
 const stats = computed(() => [
-  { label: '注册用户', value: '1,284', icon: User, color: '#409eff', trend: 12 },
-  { label: '作品总量', value: artworkTotal.value, icon: Picture, color: '#67c23a', trend: 8 },
+  { label: '注册用户', value: userTotal.value, icon: User, color: '#409eff', trend: 12, route: '/admin/users' },
+  { label: '作品总量', value: artworkTotal.value, icon: Picture, color: '#67c23a', trend: 8, route: '/admin/audit' },
   { label: '成交总额', value: '158.42', isPrice: true, icon: Wallet, color: '#e6a23c', trend: 24 },
   { label: '活跃拍卖', value: '42', icon: TrendCharts, color: '#f56c6c', trend: -5 }
 ])
 
 onMounted(() => {
-  fetchArtworkTotal()
-  pollTimer = setInterval(fetchArtworkTotal, 10000)
+  refreshStats()
+  pollTimer = setInterval(refreshStats, 10000)
 })
 
 onUnmounted(() => {
@@ -147,6 +181,9 @@ onUnmounted(() => {
     .stat-card {
       border: none;
       border-radius: 12px;
+      &.clickable {
+        cursor: pointer;
+      }
       .stat-content {
         display: flex;
         justify-content: space-between;

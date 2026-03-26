@@ -11,6 +11,7 @@ class User extends Model {
   public role!: 'admin' | 'auction_house' | 'seller' | 'buyer'
   public nonce!: string
   public bio!: string | null
+  public enabled!: boolean
   public readonly createdAt!: Date
   public readonly updatedAt!: Date
 }
@@ -60,6 +61,12 @@ User.init(
       type: DataTypes.TEXT,
       allowNull: true,
       comment: '个人简介'
+    },
+    enabled: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: true,
+      comment: '是否启用（封禁/解封）'
     }
   },
   {
@@ -69,7 +76,8 @@ User.init(
     underscored: true,
     indexes: [
       { unique: true, fields: ['address'] },
-      { fields: ['role'] }
+      { fields: ['role'] },
+      { fields: ['enabled'] }
     ]
   }
 )

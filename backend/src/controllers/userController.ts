@@ -31,7 +31,7 @@ export const getUsers = async (req: Request, res: Response, next: NextFunction) 
 
     const { count, rows } = await User.findAndCountAll({
       where,
-      attributes: ['id', 'address', 'username', 'avatar', 'email', 'role', 'createdAt'],
+      attributes: ['id', 'address', 'username', 'avatar', 'email', 'role', 'enabled', 'createdAt'],
       order: [['createdAt', 'DESC']],
       offset,
       limit
@@ -72,6 +72,25 @@ export const updateUserRole = async (req: Request, res: Response, next: NextFunc
     await user.update({ role })
 
     res.success(user)
+  } catch (error) {
+    next(error)
+  }
+}
+
+// 更新用户启用状态（封禁/解封）
+export const updateUserStatus = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params
+    const { enabled } = req.body
+    if (typeof enabled !== 'boolean') {
+      throw new AppError('参数 enabled 必须为布尔值', -1, 400)
+    }
+    const user = await User.findByPk(id)
+    if (!user) {
+      throw new AppError('用户不存在', -1, 404)
+    }
+    await user.update({ enabled })
+    res.success({ id: user.id, enabled: user.enabled })
   } catch (error) {
     next(error)
   }

@@ -23,6 +23,9 @@
           <router-link to="/admin/auctions" class="nav-item">
             <el-icon><Monitor /></el-icon>拍卖管理
           </router-link>
+          <router-link to="/admin/users" class="nav-item">
+            <el-icon><User /></el-icon>用户管理
+          </router-link>
         </nav>
 
         <div class="admin-user">
@@ -66,24 +69,17 @@ import {
   DataLine, 
   Check, 
   Monitor, 
-  ArrowDown 
+  ArrowDown,
+  User
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const userStore = useUserStore()
 
-const handleLogout = async () => {
+const handleLogout = () => {
   userStore.setRole('buyer')
-
-  if (!userStore.address) {
-    ElMessage.warning('已退出管理员模式，请先连接钱包完成竞买人认证')
-    router.push('/')
-    return
-  }
-
-  await userStore.refreshBalance()
   ElMessage.success({
-    message: '竞买人身份认证成功',
+    message: '已退出管理员模式',
     duration: 2000,
     grouping: true
   })
