@@ -816,8 +816,9 @@ const handleAuctionEnd = () => {
     const highestBidder = bidHistory.value[0]?.bidderAddress
     if (highestBidder?.toLowerCase() === userStore.address?.toLowerCase()) {
       battleState.value = 'success'
-      isCancelled.value = true
-      settleTime.value = dayjs().format('YYYY-MM-DD HH:mm:ss')
+      isCancelled.value = true // 锁定 UI
+      const winTime = dayjs().format('YYYY/M/D HH:mm:ss')
+      settleTime.value = winTime
       ElMessage.success('恭喜！您在本次竞拍中胜出！')
     } else {
       battleState.value = 'cancelled'

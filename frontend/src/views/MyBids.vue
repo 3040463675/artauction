@@ -56,7 +56,7 @@
                   </div>
                   <div class="time-info">
                     <el-icon><Clock /></el-icon>
-                    <span>{{ bid.bidStatus === 'active' ? '结束时间：' : '结算时间：' }}{{ formatTime(bid.endTime) }}</span>
+                    <span>{{ bid.bidStatus === 'active' ? '结束时间：' : '成交时间：' }}{{ formatTime(bid.endTime) }}</span>
                   </div>
                   <div class="card-footer">
                     <el-button type="primary" plain size="small">查看详情</el-button>
@@ -79,6 +79,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { Delete, Picture, Clock } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import dayjs from 'dayjs'
 import { getMyBids } from '@/api/auction'
 import { useUserStore } from '@/stores/user'
 import { mockAuctions } from '@/utils/mockData'
@@ -182,9 +183,9 @@ const fetchMyBids = async () => {
   }
 }
 
-const formatTime = (time: string | number) => {
+const formatTime = (time: string | number | Date) => {
   if (!time) return '已结束'
-  return new Date(time).toLocaleString()
+  return dayjs(time).format('YYYY/M/D HH:mm:ss')
 }
 
 const viewDetail = (bid: any) => {

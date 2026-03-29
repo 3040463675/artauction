@@ -105,11 +105,13 @@ import {
   TrendCharts
 } from '@element-plus/icons-vue'
 import { getArtworks } from '@/api/artwork'
+import { getAdminOverview } from '@/api/auction'
 import { getUsers } from '@/api/user'
 
 const timeRange = ref('7d')
 const artworkTotal = ref('0')
 const userTotal = ref('0')
+const turnover = ref('0.00')
 let pollTimer: ReturnType<typeof setInterval> | null = null
 const router = useRouter()
 
@@ -124,6 +126,23 @@ const fetchUserTotal = async () => {
     }
   } catch (error) {
     console.error('获取用户总量失败:', error)
+  }
+}
+
+const formatTurnover = (value: number) => value.toLocaleString('zh-CN', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 4
+})
+
+const fetchTurnover = async () => {
+  try {
+    const res = await getAdminOverview()
+    if (res.code === 0 || res.code === 200) {
+      const total = Number(res.data?.turnover ?? 0)
+      turnover.value = formatTurnover(Number.isNaN(total) ? 0 : total)
+    }
+  } catch (error) {
+    console.error('获取成交总额失败:', error)
   }
 }
 
@@ -146,12 +165,13 @@ const handleStatClick = (route?: string) => {
 const refreshStats = () => {
   fetchArtworkTotal()
   fetchUserTotal()
+  fetchTurnover()
 }
 
 const stats = computed(() => [
   { label: '注册用户', value: userTotal.value, icon: User, color: '#409eff', trend: 12, route: '/admin/users' },
   { label: '作品总量', value: artworkTotal.value, icon: Picture, color: '#67c23a', trend: 8, route: '/admin/audit' },
-  { label: '成交总额', value: '158.42', isPrice: true, icon: Wallet, color: '#e6a23c', trend: 24 },
+  { label: '成交总额', value: turnover.value, isPrice: true, icon: Wallet, color: '#e6a23c', trend: 24 },
   { label: '活跃拍卖', value: '42', icon: TrendCharts, color: '#f56c6c', trend: -5 }
 ])
 

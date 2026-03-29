@@ -5,6 +5,31 @@ import { AppError } from '../middleware/error'
 
 const AUCTION_DURATION_SECONDS = 15 * 24 * 60 * 60
 
+// 管理员数据概览统计
+export const getAdminOverview = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const turnover = await Auction.sum('highestBid', {
+      where: {
+        status: { [Op.in]: [AuctionStatus.Ended, AuctionStatus.Settled] },
+        highestBidder: { [Op.ne]: null }
+      }
+    })
+
+    const activeAuctionCount = await Auction.count({ where: { status: AuctionStatus.Active } })
+    const endedAuctionCount = await Auction.count({ where: { status: AuctionStatus.Ended } })
+    const settledAuctionCount = await Auction.count({ where: { status: AuctionStatus.Settled } })
+
+    res.success({
+      turnover: String(turnover || 0),
+      activeAuctionCount,
+      endedAuctionCount,
+      settledAuctionCount
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
 // 获取拍卖列表
 export const getAuctions = async (req: Request, res: Response, next: NextFunction) => {
   try {

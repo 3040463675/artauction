@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { body } from 'express-validator'
 import {
   getAuctions,
+  getAdminOverview,
   getAuctionById,
   getBidHistory,
   getHotAuctions,
@@ -32,6 +33,9 @@ router.get('/my-bids', getMyBids)
 
 // 获取用户创建的拍卖
 router.get('/my-auctions', getMyAuctions)
+
+// 管理员数据概览
+router.get('/admin/overview', optionalAuth, roleMiddleware('admin'), getAdminOverview)
 
 // 获取拍卖详情
 router.get('/:id', getAuctionById)

@@ -26,6 +26,16 @@ export const getEndingSoonAuctions = () => {
   return request.get<ApiResponse<Auction[]>>('/auctions/ending-soon')
 }
 
+// 管理员数据概览
+export const getAdminOverview = () => {
+  return request.get<ApiResponse<{
+    turnover: string
+    activeAuctionCount: number
+    endedAuctionCount: number
+    settledAuctionCount: number
+  }>>('/auctions/admin/overview')
+}
+
 // 获取我参与的拍卖
 export const getMyBids = (address: string) => {
   return request.get<ApiResponse<Auction[]>>('/auctions/my-bids', {

@@ -81,7 +81,7 @@
 
       <!-- 页脚 - 在非管理后台且非隐藏Chrome页面显示 -->
       <footer v-if="!$route.path.startsWith('/admin') && !$route.meta.hideChrome" class="app-footer">
-        <p>&copy; 2024 ArtChain - 基于区块链的艺术品竞拍系统</p>
+        <p>&copy; 2026 ArtChain - 基于区块链的艺术品竞拍系统</p>
       </footer>
 
     </div>
