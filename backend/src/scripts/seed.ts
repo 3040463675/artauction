@@ -1,7 +1,7 @@
 import 'dotenv/config'
 import { sequelize } from '../config/database'
 import { setupAssociations } from '../models'
-import { User, Artwork, Auction, Category, AuctionStatus } from '../models'
+import { User, Artwork, Auction, Category, AuctionStatus, Bid } from '../models'
 
 const seedDatabase = async () => {
   try {
@@ -35,6 +35,14 @@ const seedDatabase = async () => {
       })
     }
     console.log('✅ 默认用户已就绪')
+
+    // 2.5 清理旧的出价记录，重置拍卖场次
+    console.log('🧹 正在清空旧的出价记录并重置拍卖状态...')
+    await Bid.destroy({ where: {}, truncate: false }) // 清空所有出价
+    await Auction.update(
+      { highestBidder: null }, 
+      { where: {} }
+    )
 
     // 3. 模拟数据定义 (全 8 件作品)
     const mockData = [
@@ -166,7 +174,7 @@ const seedDatabase = async () => {
           creatorId: user!.id,
           ownerAddress: data.creator,
           categoryId: categoryId,
-          isVerified: !data.unverified, // 根据数据定义设置审核状态
+          isVerified: true, // 全部设置为已验证
           isOnAuction: true
         }
       })
@@ -178,7 +186,7 @@ const seedDatabase = async () => {
       const fixedEndTime = new Date(Date.now() + 15 * 24 * 3600 * 1000)
 
       // 查找或创建拍卖
-      const [auctionRecord, created] = await Auction.findOrCreate({
+      const [auctionRecord] = await Auction.findOrCreate({
         where: { auctionId: numericId },
         defaults: {
           auctionId: numericId,
@@ -195,13 +203,16 @@ const seedDatabase = async () => {
         }
       })
 
-      // 如果已存在，更新其结束时间为统一 15 天
-      if (!created) {
-        await auctionRecord.update({
-          endTime: fixedEndTime,
-          isHot: (data as any).isHot || false
-        })
-      }
+      // 强制更新：确保作品都在拍卖中，且状态为 Active (1)，结束时间重置
+      await artwork.update({ isOnAuction: true, isVerified: true })
+      await auctionRecord.update({
+        status: AuctionStatus.Active,
+        endTime: fixedEndTime,
+        isHot: (data as any).isHot || false,
+        startingPrice: data.start, // 确保起拍价也同步更新
+        highestBid: data.start,    // 重置时最高价应等于起拍价
+        highestBidder: null        // 确保出价者为空
+      })
       
       console.log(`   ✅ 已导入: ${data.name}`)
     }

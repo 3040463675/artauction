@@ -28,7 +28,6 @@ Category.init(
     slug: {
       type: DataTypes.STRING(50),
       allowNull: false,
-      unique: true,
       comment: '分类标识'
     },
     description: {
@@ -52,7 +51,10 @@ Category.init(
     sequelize,
     tableName: 'categories',
     timestamps: true,
-    underscored: true
+    underscored: true,
+    indexes: [
+      { unique: true, fields: ['slug'], name: 'categories_slug_unique' }
+    ]
   }
 )
 

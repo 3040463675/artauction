@@ -46,9 +46,9 @@ Bid.init(
     timestamps: true,
     underscored: true,
     indexes: [
-      { fields: ['auction_id'] },
-      { fields: ['bidder_address'] },
-      { fields: ['created_at'] }
+      { fields: ['auction_id'], name: 'bids_auction_id_index' },
+      { fields: ['bidder_address'], name: 'bids_bidder_address_index' },
+      { fields: ['created_at'], name: 'bids_created_at_index' }
     ]
   }
 )

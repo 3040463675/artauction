@@ -4,6 +4,7 @@ import helmet from 'helmet'
 import morgan from 'morgan'
 import dotenv from 'dotenv'
 import path from 'path'
+import { Op } from 'sequelize'
 
 // 加载环境变量
 dotenv.config()
@@ -56,6 +57,112 @@ app.get('/health', (req, res) => {
   res.success({ status: 'ok', timestamp: new Date().toISOString() })
 })
 
+// ==========================================
+// 后台定时任务
+// ==========================================
+
+// 自动结算超时拍卖
+const startAutoSettleJob = async () => {
+  const { Auction, Bid, Artwork, sequelize } = await import('./models')
+
+  const job = async () => {
+    try {
+      const now = new Date()
+
+      // 查找已过结束时间但仍处于 Active 状态的拍卖
+      const expiredAuctions = await Auction.findAll({
+        where: {
+          status: 1, // Active
+          endTime: { [Op.lte]: now }
+        }
+      })
+
+      for (const auction of expiredAuctions) {
+        // 获取该拍卖的最高出价
+        const topBid = await Bid.findOne({
+          where: { auctionId: auction.id },
+          order: [['createdAt', 'DESC']]
+        })
+
+        const winner = topBid?.bidderAddress || null
+        const winAmount = topBid?.amount || auction.highestBid || '0'
+
+        // 更新拍卖状态为已结算
+        await auction.update({
+          status: 4, // Settled
+          highestBid: winAmount,
+          highestBidder: winner
+        })
+
+        // 更新艺术品状态
+        if (winner) {
+          await Artwork.update(
+            { isOnAuction: false, ownerAddress: winner },
+            { where: { id: auction.artworkId } }
+          )
+        } else {
+          await Artwork.update(
+            { isOnAuction: false },
+            { where: { id: auction.artworkId } }
+          )
+        }
+
+        console.log(`[AutoSettle] 拍卖 ${auction.id} 已自动结算 - 赢家: ${winner || '无'}, 金额: ${winAmount}`)
+      }
+
+      // 查找超过3分钟无新出价且有人出价的 Active 拍卖
+      const threeMinutesAgo = new Date(now.getTime() - 3 * 60 * 1000)
+
+      const inactiveAuctions = await Auction.findAll({
+        where: {
+          status: 1, // Active
+          updatedAt: { [Op.lte]: threeMinutesAgo }
+        }
+      })
+
+      for (const auction of inactiveAuctions) {
+        // 获取该拍卖的最高出价
+        const topBid = await Bid.findOne({
+          where: { auctionId: auction.id },
+          order: [['createdAt', 'DESC']]
+        })
+
+        if (!topBid) {
+          // 如果没有任何出价，跳过
+          continue
+        }
+
+        const winner = topBid.bidderAddress
+        const winAmount = topBid.amount
+
+        // 更新拍卖状态为已结算
+        await auction.update({
+          status: 4, // Settled
+          highestBid: winAmount,
+          highestBidder: winner
+        })
+
+        // 更新艺术品状态
+        await Artwork.update(
+          { isOnAuction: false, ownerAddress: winner },
+          { where: { id: auction.artworkId } }
+        )
+
+        console.log(`[AutoSettle] 拍卖 ${auction.id} 因3分钟无活动已自动结算 - 赢家: ${winner}, 金额: ${winAmount}`)
+      }
+    } catch (error) {
+      console.error('[AutoSettle] 定时任务执行失败:', error)
+    }
+  }
+
+  // 每 10 秒执行一次
+  setInterval(job, 10000)
+  console.log('[AutoSettle] 自动结算定时任务已启动 (每10秒检查一次)')
+
+  // 立即执行一次
+  job()
+}
+
 // API信息
 app.get('/api', (req, res) => {
   res.success({
@@ -70,7 +177,7 @@ app.use(notFoundHandler)
 app.use(errorHandler)
 
 // 启动服务器
-const PORT = process.env.PORT || 8080
+const PORT = process.env.PORT || 8081
 
 const startServer = async () => {
   try {
@@ -92,6 +199,9 @@ const startServer = async () => {
       console.log(`🚀 服务器运行在 http://localhost:${PORT}`)
       console.log(`📚 API文档: http://localhost:${PORT}/api`)
     })
+
+    // 启动后台定时任务
+    startAutoSettleJob()
   } catch (error) {
     console.error('❌ 服务器启动失败:', error)
     process.exit(1)

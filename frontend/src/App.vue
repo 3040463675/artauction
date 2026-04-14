@@ -33,7 +33,7 @@
                 {{ formatAddress(userStore.address) }}
               </el-tag>
               <span class="balance">
-                {{ formatPrice(userStore.balance) }} ETH
+                {{ formatPrice(userStore.balance || 0) }} ETH
               </span>
               <el-button type="danger" size="small" @click="disconnectWallet">
                 断开连接
@@ -94,7 +94,7 @@ import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import { useUserStore } from '@/stores/user'
-import { connectWallet as connect, disconnectWallet as disconnect } from '@/utils/wallet'
+import { connectWallet as connect, disconnectWallet as disconnect, setupWalletListeners } from '@/utils/wallet'
 import { formatPrice } from '@/utils/format'
 
 const userStore = useUserStore()
@@ -133,7 +133,10 @@ const logout = () => {
 }
 
 onMounted(async () => {
-  // 检查是否已连接
+  // 启动钱包监听（账户切换、余额轮询）
+  setupWalletListeners()
+
+  // 检查是否已连接并强制刷新一次余额
   if (userStore.isConnected) {
     await userStore.refreshBalance()
   }

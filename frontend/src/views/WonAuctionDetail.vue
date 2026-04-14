@@ -28,11 +28,11 @@
                 </div>
               </div>
             </div>
-            
+
             <div class="artwork-info-card">
               <h1 class="artwork-name">{{ auction.artwork?.name }}</h1>
               <p class="artwork-desc">{{ auction.artwork?.description }}</p>
-              
+
               <div class="meta-grid">
                 <div class="meta-item">
                   <span class="label">Token ID</span>
@@ -104,12 +104,12 @@
                   </div>
                 </transition-group>
               </div>
-              
+
               <!-- 展开/收起按钮 -->
               <div v-if="bidHistory.length > 3" class="expand-action">
-                <el-button 
-                  link 
-                  type="primary" 
+                <el-button
+                  link
+                  type="primary"
                   @click="showAllBids = !showAllBids"
                   class="toggle-btn"
                 >
@@ -138,7 +138,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { ArrowLeft, Trophy, User, ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
-import { getAuctionById } from '@/api/auction'
+import { getAuctionById, getBidHistory } from '@/api/auction'
 import { mockAuctions } from '@/utils/mockData'
 import { formatPrice } from '@/utils/format'
 import type { Auction } from '@/types'
@@ -182,21 +182,21 @@ const fetchDetail = async () => {
   const id = String(idParam).trim()
 
   loading.value = true
-  
-  // 模拟从 localStorage 获取成交信息
+
+  // 从 localStorage 获取成交信息
   const localMockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
   const savedBid = localMockBids[id]
 
-  // 如果是 Mock 数据
+  // 判断是否为 Mock 数据
   const isMock = id.startsWith('mock-') || isNaN(Number(id))
-  
+
   if (isMock) {
     const foundMock = mockAuctions.find(m => m.auctionId === id)
     const localCreated = JSON.parse(localStorage.getItem('MOCK_CREATED_AUCTIONS') || '[]')
     const foundLocal = localCreated.find((m: any) => m.auctionId === id)
-    
+
     const finalFound = foundLocal || foundMock
-    
+
     if (finalFound) {
       auction.value = JSON.parse(JSON.stringify(finalFound))
       if (savedBid) {
@@ -218,7 +218,7 @@ const fetchDetail = async () => {
     }
   }
 
-  // 如果还是没找到，给个保底显示，防止白屏
+  // 保底显示，防止白屏
   if (!auction.value && savedBid) {
     auction.value = {
       auctionId: id,
@@ -237,33 +237,30 @@ const fetchDetail = async () => {
     settleTime.value = savedBid.endTime
   }
 
-  // 模拟生成丰富的机器人出价记录
+  // 获取真实出价历史
   if (auction.value) {
-    const bids = []
-    const basePrice = Number(auction.value.highestBid)
-    const inc = 0.1
-    
-    // 第一条永远是“您”的成交出价
-    bids.push({
-      bidderName: '您',
-      bidderAddress: userStore.address,
-      amount: basePrice,
-      createdAt: dayjs(settleTime.value).valueOf()
-    })
-
-    // 生成 5-8 条机器人出价记录
-    const botCount = Math.floor(Math.random() * 4) + 5
-    let currentBotPrice = basePrice
-    for (let i = 1; i <= botCount; i++) {
-      currentBotPrice -= inc * (Math.random() * 2 + 1)
-      bids.push({
-        bidderName: `Robot_${Math.floor(Math.random() * 900) + 100}`,
-        bidderAddress: '0x' + Math.random().toString(16).slice(2, 42),
-        amount: currentBotPrice.toFixed(2),
-        createdAt: dayjs(settleTime.value).valueOf() - i * (Math.random() * 100000 + 50000)
-      })
+    try {
+      const id = auction.value.auctionId || auction.value.id
+      const historyRes = await getBidHistory(Number(id))
+      if (historyRes.data && historyRes.data.length > 0) {
+        bidHistory.value = historyRes.data
+      } else {
+        bidHistory.value = [{
+          bidderName: '您',
+          bidderAddress: userStore.address,
+          amount: auction.value.highestBid,
+          createdAt: dayjs(settleTime.value).valueOf()
+        }]
+      }
+    } catch (e) {
+      console.error('Failed to fetch bid history:', e)
+      bidHistory.value = [{
+        bidderName: '您',
+        bidderAddress: userStore.address,
+        amount: auction.value.highestBid,
+        createdAt: dayjs(settleTime.value).valueOf()
+      }]
     }
-    bidHistory.value = bids
   }
 
   loading.value = false
@@ -370,7 +367,7 @@ onMounted(fetchDetail)
         .label {
           display: block;
           font-size: 12px;
-          color: #94a3b8;
+          color: #94a8b8;
           margin-bottom: 4px;
         }
         .value {
@@ -423,7 +420,7 @@ onMounted(fetchDetail)
         margin-bottom: 20px;
         padding-bottom: 20px;
         border-bottom: 1px dashed #cbd5e1;
-        
+
         .label { font-size: 16px; font-weight: 600; color: #1e293b; }
         .amount { font-size: 32px; font-weight: 900; color: #3b82f6; }
         .unit { font-size: 16px; font-weight: 700; color: #3b82f6; margin-left: 4px; }
@@ -488,7 +485,7 @@ onMounted(fetchDetail)
 
     .history-list {
       position: relative;
-      
+
       .list-enter-active,
       .list-leave-active {
         transition: all 0.4s ease;
@@ -532,11 +529,11 @@ onMounted(fetchDetail)
     .expand-action {
       text-align: center;
       margin-top: 15px;
-      
+
       .toggle-btn {
         font-size: 13px;
         font-weight: 600;
-        
+
         &:hover {
           opacity: 0.8;
         }

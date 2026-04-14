@@ -19,6 +19,10 @@ export const useUserStore = defineStore('user', () => {
 
   // 设置余额
   const setBalance = (bal: string) => {
+    if (!bal || isNaN(Number(bal))) {
+      console.warn('[UserStore] Invalid balance update:', bal)
+      return
+    }
     balance.value = bal
   }
 
@@ -42,9 +46,12 @@ export const useUserStore = defineStore('user', () => {
     if (!address.value) return
     try {
       const { ethers } = await import('ethers')
+      if (!window.ethereum) return
       const provider = new ethers.BrowserProvider(window.ethereum)
       const bal = await provider.getBalance(address.value)
-      balance.value = ethers.formatEther(bal).slice(0, 6)
+      // 获取完整精度余额
+      balance.value = ethers.formatEther(bal)
+      console.log(`[Balance] Refreshed: ${balance.value} ETH for ${address.value}`)
     } catch (error) {
       console.error('Failed to refresh balance:', error)
     }

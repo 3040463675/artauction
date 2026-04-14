@@ -27,7 +27,6 @@ User.init(
     address: {
       type: DataTypes.STRING(42),
       allowNull: false,
-      unique: true,
       comment: '钱包地址'
     },
     username: {
@@ -75,9 +74,9 @@ User.init(
     timestamps: true,
     underscored: true,
     indexes: [
-      { unique: true, fields: ['address'] },
-      { fields: ['role'] },
-      { fields: ['enabled'] }
+      { unique: true, fields: ['address'], name: 'users_address_unique' },
+      { fields: ['role'], name: 'users_role_index' },
+      { fields: ['enabled'], name: 'users_enabled_index' }
     ]
   }
 )

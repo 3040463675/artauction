@@ -40,7 +40,6 @@ Auction.init(
     auctionId: {
       type: DataTypes.INTEGER.UNSIGNED,
       allowNull: false,
-      unique: true,
       comment: '链上拍卖ID'
     },
     artworkId: {
@@ -114,11 +113,11 @@ Auction.init(
     timestamps: true,
     underscored: true,
     indexes: [
-      { unique: true, fields: ['auction_id'] },
-      { fields: ['artwork_id'] },
-      { fields: ['seller_address'] },
-      { fields: ['status'] },
-      { fields: ['end_time'] }
+      { unique: true, fields: ['auction_id'], name: 'auctions_auction_id_unique' },
+      { fields: ['artwork_id'], name: 'auctions_artwork_id_index' },
+      { fields: ['seller_address'], name: 'auctions_seller_address_index' },
+      { fields: ['status'], name: 'auctions_status_index' },
+      { fields: ['end_time'], name: 'auctions_end_time_index' }
     ]
   }
 )

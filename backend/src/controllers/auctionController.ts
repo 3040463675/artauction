@@ -399,48 +399,94 @@ export const updateAuctionStatus = async (req: Request, res: Response, next: Nex
 
 // 记录出价
 export const recordBid = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { auctionId, bidderAddress, amount, txHash } = req.body
+  const { auctionId, bidderAddress, amount, txHash } = req.body
+  console.log(`[Bid] Attempting to record bid: auctionId=${auctionId}, bidder=${bidderAddress}, amount=${amount}`)
 
+  try {
     const auction = await Auction.findOne({
       where: {
-        [Op.or]: [{ id: auctionId }, { auctionId: auctionId }]
+        [Op.or]: [
+          { id: auctionId },
+          { auctionId: auctionId }
+        ]
       }
     })
 
     if (!auction) {
-      throw new AppError('拍卖不存在', -1, 404)
+      console.error(`[Bid] Auction not found: ${auctionId}`)
+      throw new AppError('未找到对应的拍卖场次', -1, 404)
     }
 
-    // 关键校验：检查拍卖是否已结束
-    const now = new Date()
     if (auction.status !== AuctionStatus.Active) {
+      console.error(`[Bid] Auction not active: status=${auction.status}`)
       throw new AppError('拍卖当前不可参与（可能已结束或已结算）', -1, 400)
     }
 
+    const now = new Date()
     if (now > new Date(auction.endTime)) {
+      console.error(`[Bid] Auction expired: endTime=${auction.endTime}`)
       // 自动标记为已结束
       await auction.update({ status: AuctionStatus.Ended })
       throw new AppError('拍卖已过结束时间', -1, 400)
     }
 
+    // 关键校验：检查出价是否高于当前最高出价
+    const currentHighestBid = parseFloat(auction.highestBid || '0')
+    const bidAmount = parseFloat(amount)
+    const minIncrement = parseFloat(auction.minIncrement || '0')
+
+    console.log(`[Bid] Validation: bidAmount=${bidAmount}, currentHighestBid=${currentHighestBid}, minIncrement=${minIncrement}`)
+
+    // 针对首次出价（最高价为0或等于起拍价且无最高出价者）的特殊处理
+    if (!auction.highestBidder || auction.highestBidder === '0x...') {
+      if (bidAmount < parseFloat(auction.startingPrice)) {
+        throw new AppError(`出价金额不能低于起拍价 ${auction.startingPrice} ETH`, -1, 400)
+      }
+    } else {
+      // 正常竞价逻辑：必须高于当前价
+      if (bidAmount <= currentHighestBid) {
+        throw new AppError(`出价金额必须高于当前最高价 ${currentHighestBid} ETH`, -1, 400)
+      }
+
+      // 增加微小的 epsilon (1e-10) 来处理 JavaScript 浮点数精度误差
+      if (bidAmount < (currentHighestBid + minIncrement - 0.0000000001)) {
+        throw new AppError(`最低加价幅度为 ${minIncrement} ETH`, -1, 400)
+      }
+    }
+
+    // 确保出价者用户存在（防止外键约束失败）
+    let user = await User.findOne({ where: { address: bidderAddress } })
+    if (!user) {
+      console.log(`[Bid] Creating missing user: ${bidderAddress}`)
+      user = await User.create({
+        address: bidderAddress,
+        username: `User_${bidderAddress.slice(2, 6)}`,
+        role: 'buyer'
+      })
+    }
+
     // 创建出价记录
-    await Bid.create({
-      auctionId: auction.id,
+    const newBid = await Bid.create({
+      auctionId: auction.id, // 使用数据库自增 ID 作为外键
       bidderAddress,
-      amount,
+      amount: bidAmount.toString(), // 确保是字符串以匹配 DECIMAL
       txHash
     })
+    console.log(`[Bid] Success: Bid created with ID ${newBid.id}`)
 
     // 更新拍卖信息
     await auction.update({
-      highestBid: amount,
+      highestBid: bidAmount.toString(),
       highestBidder: bidderAddress
     })
 
-    res.success({ success: true })
-  } catch (error) {
-    next(error)
+    res.success(newBid)
+  } catch (error: any) {
+    console.error(`[Bid] Failed to record bid:`, error)
+    if (error instanceof AppError) {
+      return next(error)
+    }
+    next(new AppError(`出价提交失败: ${error.message || '未知错误'}`, -1, 500))
   }
 }
 

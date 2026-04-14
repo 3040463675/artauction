@@ -134,47 +134,8 @@ const fetchMyBids = async () => {
           }
         })
     } else {
-      const localMockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
-      const resultBids: any[] = []
-      
-      // 1. 先加载本地存储中的所有记录（排除已删除的）
-      Object.keys(localMockBids).forEach(id => {
-        if (deletedIds.includes(id)) return
-        
-        const saved = localMockBids[id]
-        const mockInfo = mockAuctions.find(m => m.auctionId === id)
-        
-        resultBids.push({
-          id: id,
-          ...saved,
-          title: mockInfo?.artwork?.name || saved.title,
-          imageUrl: mockInfo?.artwork?.imageUrl || saved.imageUrl
-        })
-      })
-
-      // 2. 如果本地记录太少，补充一些默认的模拟数据（也要排除已删除的）
-      if (resultBids.length < 3) {
-        mockAuctions.forEach((mock, index) => {
-          if (resultBids.length >= 3) return // 最多补充到 3 条
-          if (!localMockBids[mock.auctionId] && !deletedIds.includes(mock.auctionId)) {
-            let defaultStatus = 'active'
-            if (index === 1) defaultStatus = 'won'
-            if (index === 2) defaultStatus = 'lost'
-            
-            resultBids.push({
-              id: mock.auctionId,
-              title: mock.artwork?.name || '未命名作品',
-              imageUrl: mock.artwork?.imageUrl || '',
-              currentPrice: mock.highestBid,
-              myPrice: (Number(mock.highestBid) - 0.2).toFixed(1),
-              endTime: new Date(Date.now() + 86400000 * (index + 1)).toISOString(),
-              bidStatus: defaultStatus
-            })
-          }
-        })
-      }
-      
-      bids.value = resultBids
+      // 移除之前补充模拟数据的逻辑，只根据真实的数据库返回来显示
+      bids.value = []
     }
   } catch (error) {
     console.error('Failed to fetch my bids:', error)

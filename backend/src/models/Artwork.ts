@@ -29,7 +29,6 @@ Artwork.init(
     tokenId: {
       type: DataTypes.INTEGER.UNSIGNED,
       allowNull: false,
-      unique: true,
       comment: 'NFT Token ID'
     },
     name: {
@@ -91,10 +90,10 @@ Artwork.init(
     timestamps: true,
     underscored: true,
     indexes: [
-      { unique: true, fields: ['token_id'] },
-      { fields: ['creator_id'] },
-      { fields: ['owner_address'] },
-      { fields: ['is_on_auction'] }
+      { unique: true, fields: ['token_id'], name: 'artworks_token_id_unique' },
+      { fields: ['creator_id'], name: 'artworks_creator_id_index' },
+      { fields: ['owner_address'], name: 'artworks_owner_address_index' },
+      { fields: ['is_on_auction'], name: 'artworks_is_on_auction_index' }
     ]
   }
 )

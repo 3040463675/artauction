@@ -119,7 +119,7 @@
             <template v-else>
               <div class="price-display-card">
                 <div class="bid-info">
-                  <span class="label">{{ auction.status === 1 ? '当前最高出价' : '起拍价格' }}</span>
+                  <span class="label">当前最高价格</span>
                   <div class="price-value">
                     <span class="amount">{{ formatPrice(auction.highestBid || auction.startingPrice) }}</span>
                     <span class="unit">ETH</span>
@@ -139,6 +139,12 @@
                   <div v-if="battleState === 'success' || isCancelled || auction.status === 4" class="settle-time-display">
                     <el-icon><Clock /></el-icon>
                     <span>{{ settleTime || formatTime(auction.endTime) }}</span>
+                  </div>
+                  <!-- 超时倒计时显示 -->
+                  <div v-else-if="timeLeft > 0" class="timeout-countdown">
+                    <el-icon><Clock /></el-icon>
+                    <span class="timeout-text">等待中: {{ Math.ceil(timeLeft / 1000) }}s</span>
+                    <span class="timeout-hint">若无更高出价，将自动成交</span>
                   </div>
                   <CountdownTimer v-else :endTime="auction.endTime" @end="handleAuctionEnd" />
                 </div>
@@ -179,10 +185,10 @@
                       size="large"
                       class="bid-btn premium-btn"
                       :loading="bidding"
-                      :disabled="isCancelled || battleState !== 'active'"
+                      :disabled="isCancelled || battleState !== 'active' || !isMyTurn"
                       @click="handleBid"
                     >
-                      参与竞拍
+                      {{ !isMyTurn ? '等待他人出价' : '参与竞拍' }}
                     </el-button>
                     <el-button
                       type="danger"
@@ -231,9 +237,11 @@
                     <template #default="{ row, $index }">
                       <div class="bidder-cell">
                         <el-avatar :size="24" icon="User" />
-                        <span class="addr">{{ row.bidderName || formatAddress(row.bidderAddress) }}</span>
-                        <span v-if="(isCancelled || battleState === 'success') && $index === 0" class="crown-icon" title="竞拍获胜">🏆</span>
-                        <el-tag v-else-if="row.bidderAddress?.toLowerCase() === auction.highestBidder?.toLowerCase()" size="small" type="success" effect="plain" class="winner-tag">领先</el-tag>
+                        <span class="addr">
+                          {{ row.bidderAddress?.toLowerCase() === userStore.address?.toLowerCase() ? '您' : (row.bidderName || formatAddress(row.bidderAddress)) }}
+                        </span>
+                        <span v-if="(isCancelled || battleState === 'success' || auction.status === 4) && $index === 0" class="crown-icon" title="竞拍获胜">🏆</span>
+                        <el-tag v-else-if="$index === 0 && row.bidderAddress?.toLowerCase() === auction.highestBidder?.toLowerCase()" size="small" type="success" effect="plain" class="winner-tag">领先</el-tag>
                       </div>
                     </template>
                   </el-table-column>
@@ -282,7 +290,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -309,8 +317,16 @@ const ending = ref(false)
 const isCancelled = ref(false)
 const settleTime = ref('')
 const battleState = ref<'waiting' | 'active' | 'success' | 'cancelled'>('waiting')
-const isFirstLoad = ref(true)
-const pendingBotTimer = ref<any>(null)
+const pollTimer = ref<any>(null)
+const hasParticipated = ref(false) // 新增：标记当前用户是否已参与竞拍
+
+// 新增：竞拍超时相关状态
+const lastBidTime = ref<number>(0)
+const lastBidder = ref<string>('')
+const timeoutTimer = ref<any>(null)
+const isMyTurn = ref(true)  // 当前是否可以出价
+const timeLeft = ref<number>(0)  // 剩余等待时间
+const countdownInterval = ref<any>(null)
 
 const auction = ref<any>(null)
 const bidHistory = ref<any[]>([])
@@ -318,52 +334,294 @@ const bidAmount = ref(0)
 const activeTab = ref('desc')
 
 // ==========================================
-// 模拟机器人逻辑
+// 实时竞拍数据管理
 // ==========================================
 
-const makeRandomAddress = () =>
-  '0x' + Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join('')
+// 启动轮询获取最新出价数据
+const startBidPolling = () => {
+  // 每 1.5 秒轮询一次，以保证在 3s 超时前获取到数据
+  pollTimer.value = setInterval(async () => {
+    if (!auction.value || auction.value.status !== 1 || isCancelled.value) {
+      stopBidPolling()
+      return
+    }
+    await refreshBidHistory()
+  }, 1500)
+}
 
-const makeBotBid = (basePrice: number, minInc: number, timeOffset: number) => {
-  const inc = minInc * (Math.random() * 2 + 0.5)
-  const botAddress = makeRandomAddress()
-  return {
-    bidderName: formatAddress(botAddress),
-    bidderAddress: botAddress,
-    amount: parseFloat((basePrice + inc).toFixed(4)),
-    createdAt: Date.now() - timeOffset
+// 停止轮询
+const stopBidPolling = () => {
+  if (pollTimer.value) {
+    clearInterval(pollTimer.value)
+    pollTimer.value = null
   }
 }
 
-const generateBotBids = (count: number, startPrice: number, minInc: number) => {
-  const bids = []
-  let current = startPrice
-  for (let i = 0; i < count; i++) {
-    bids.push(makeBotBid(current, minInc, (count - i) * (Math.random() * 20000 + 10000)))
-    current += minInc * (Math.random() + 0.5)
+// 刷新出价历史
+const refreshBidHistory = async () => {
+  if (!auction.value) return
+  try {
+    const id = auction.value.id || auction.value.auctionId
+    const res = await getBidHistory(Number(id))
+    
+    // 关键：实时获取最新的拍卖基本信息（包含状态）
+    const auctionRes = await getAuctionById(id)
+    const latestAuctionData = auctionRes.data
+
+    if (res.data && latestAuctionData) {
+      const oldHighestBid = auction.value.highestBid
+      const oldStatus = auction.value.status
+      bidHistory.value = res.data
+      
+      // 更新本地拍卖对象的状态和最高价
+      auction.value.status = latestAuctionData.status
+      auction.value.highestBid = latestAuctionData.highestBid
+      auction.value.highestBidder = latestAuctionData.highestBidder
+      
+      if (res.data.length > 0) {
+        const topBid = res.data[0]
+        
+        // 只有当有真实最高出价者时才计算加价后的金额，否则保持起拍价
+        if (topBid.bidderAddress && topBid.bidderAddress !== '0x...') {
+          bidAmount.value = Number(topBid.amount) + Number(auction.value.minIncrement)
+        } else {
+          bidAmount.value = Number(auction.value.startingPrice)
+        }
+
+        // --- 核心修复：状态实时同步与支付唤起 ---
+        // 如果后端状态已经变为成交 (4)
+        if (auction.value.status === 4 && oldStatus === 1) {
+          console.log('[Sync] Auction settled detected via polling')
+          stopTimeoutCountdown()
+          stopBidPolling()
+          isCancelled.value = true
+          settleTime.value = dayjs().format('YYYY-MM-DD HH:mm:ss')
+          
+          const isWinner = topBid.bidderAddress?.toLowerCase() === userStore.address?.toLowerCase()
+          battleState.value = isWinner ? 'success' : 'cancelled'
+
+          if (isWinner) {
+            console.log('[Sync] I am the winner, triggering payment...')
+            // 延迟一小会儿确保 UI 已渲染出获胜状态
+            setTimeout(async () => {
+              await handleWinnerPayment(topBid.bidderAddress, Number(topBid.amount))
+            }, 500)
+          } else {
+            ElMessageBox.alert(
+              `拍卖已结束，该作品由 ${formatAddress(topBid.bidderAddress)} 拍得。`,
+              '竞拍结束',
+              { confirmButtonText: '确定', type: 'info' }
+            )
+          }
+          return
+        }
+
+        // 2. 检测到新的出价（正常竞价中）
+        if (Number(oldHighestBid) !== Number(topBid.amount)) {
+          lastBidTime.value = Date.now()
+          lastBidder.value = topBid.bidderAddress
+
+          if (topBid.bidderAddress?.toLowerCase() !== userStore.address?.toLowerCase()) {
+            isMyTurn.value = true
+            startTimeoutCountdown()
+            
+            // --- 核心修复：仅对参与过竞拍的用户弹出提示 ---
+            if (hasParticipated.value) {
+              handleOutbidQuery(topBid.amount)
+            }
+          } else {
+            // 我出价成功，重置我的回合
+            isMyTurn.value = false
+            hasParticipated.value = true // 确保出价成功后标记为已参与
+            startTimeoutCountdown()
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Failed to refresh bid history:', err)
   }
-  return bids.sort((a, b) => b.amount - a.amount)
 }
 
-// 初始模拟机器人出价 3~8 次
-const simulateInitialBots = async () => {
-  if (!isFirstLoad.value || !auction.value) return
-  isFirstLoad.value = false
+// 被超过后弹出加价询问
+const handleOutbidQuery = async (currentAmount: string | number) => {
+  try {
+    const nextAmount = Number(currentAmount) + Number(auction.value.minIncrement)
+    
+    await ElMessageBox.confirm(
+      `有人出价超过了你！当前价格：${formatPrice(currentAmount)} ETH。你是否要加价竞拍？`,
+      '有人加价',
+      {
+        confirmButtonText: '是',
+        cancelButtonText: '否',
+        type: 'warning',
+        closeOnClickModal: false,
+        closeOnPressEscape: false,
+        showClose: false
+      }
+    )
+    
+    // 用户点“是”：仅关闭弹窗，停留在详情页，让用户自己操作加价
+    ElMessage.info('请在下方输入您的出价金额并点击“参与竞拍”')
+    // 自动帮用户填好建议的最低价，方便用户操作
+    bidAmount.value = Number(nextAmount.toFixed(4))
+  } catch (action) {
+    // 用户点“否”：退出竞拍
+    if (action === 'cancel') {
+      await handleCancelBid()
+    }
+  }
+}
 
-  await new Promise(resolve => setTimeout(resolve, 2000))
+// ==========================================
+// 3秒超时自动结算机制
+// ==========================================
 
-  if (auction.value.status !== 1 || isCancelled.value) return
+// 开始超时倒计时
+const startTimeoutCountdown = () => {
+  // 清除之前的倒计时
+  stopTimeoutCountdown()
 
-  const count = Math.floor(Math.random() * 6) + 3
-  const base = Number(auction.value.startingPrice) || 1
-  const inc = Number(auction.value.minIncrement) || 0.1
-  const bots = generateBotBids(count, base, inc)
+  timeLeft.value = 5000  // 改为 5 秒无人加价自动成交
+  
+  // 每秒更新时间显示
+  countdownInterval.value = setInterval(() => {
+    timeLeft.value -= 1000
+    if (timeLeft.value <= 0) {
+      stopTimeoutCountdown()
+    }
+  }, 1000)
 
-  bidHistory.value = bots
-  auction.value.highestBid = bots[0].amount.toString()
-  auction.value.highestBidder = bots[0].bidderAddress
-  bidAmount.value = parseFloat((bots[0].amount + inc).toFixed(4))
-  battleState.value = 'active'
+  // 5秒后自动结算
+  timeoutTimer.value = setTimeout(async () => {
+    await handleTimeoutSettle()
+  }, 5000)
+}
+
+// 停止超时倒计时
+const stopTimeoutCountdown = () => {
+  if (timeoutTimer.value) {
+    clearTimeout(timeoutTimer.value)
+    timeoutTimer.value = null
+  }
+  if (countdownInterval.value) {
+    clearInterval(countdownInterval.value)
+    countdownInterval.value = null
+  }
+  timeLeft.value = 0
+}
+
+// 超时自动结算
+const handleTimeoutSettle = async () => {
+  if (isCancelled.value || battleState.value === 'success') return
+  if (!auction.value || auction.value.status !== 1) return
+
+  // 确保是最新的出价
+  await refreshBidHistory()
+
+  const topBid = bidHistory.value[0]
+  if (!topBid) return
+
+  const winner = topBid.bidderAddress
+  const winAmount = Number(topBid.amount)
+
+  settleTime.value = dayjs().format('YYYY-MM-DD HH:mm:ss')
+  isCancelled.value = true
+  battleState.value = winner.toLowerCase() === userStore.address?.toLowerCase() ? 'success' : 'cancelled'
+
+  // 立即更新本地 auction 状态，让 UI 渲染“竞拍成功”及“皇冠”
+  auction.value.highestBid = winAmount.toString()
+  auction.value.highestBidder = winner
+  auction.value.status = 4
+  auction.value.endTime = settleTime.value
+
+  // 同步到数据库
+  try {
+    await updateAuctionStatus(auction.value.id || auction.value.auctionId, {
+      status: 4,
+      highestBid: winAmount,
+      highestBidder: winner
+    })
+  } catch (err) {
+    console.error('Failed to sync auction status:', err)
+  }
+
+  // 保存到本地记录
+  const mockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
+  const auctionId = auction.value.id || auction.value.auctionId
+  mockBids[auctionId] = {
+    id: auctionId,
+    title: auction.value.artwork?.name,
+    imageUrl: auction.value.artwork?.imageUrl,
+    currentPrice: winAmount.toString(),
+    myPrice: bidHistory.value.find((b: any) => b.bidderAddress?.toLowerCase() === userStore.address?.toLowerCase())?.amount,
+    endTime: settleTime.value,
+    bidStatus: winner.toLowerCase() === userStore.address?.toLowerCase() ? 'won' : 'lost'
+  }
+  localStorage.setItem('MOCK_USER_BIDS', JSON.stringify(mockBids))
+
+  // 显示结算结果
+  const isWinner = winner.toLowerCase() === userStore.address?.toLowerCase()
+  const winnerName = isWinner ? '您' : (topBid.bidderName || formatAddress(winner))
+
+  if (isWinner) {
+    // 如果是赢家，尝试扣款
+    await handleWinnerPayment(winner, winAmount)
+  } else {
+    ElMessageBox.alert(
+      `拍卖超时无人继续出价，${winnerName} 以 ${formatPrice(winAmount)} ETH 拍得作品《${auction.value.artwork?.name}》！`,
+      '拍卖结束',
+      { confirmButtonText: '确定', type: 'warning' }
+    )
+  }
+}
+
+// 处理赢家支付
+const handleWinnerPayment = async (winner: string, winAmount: number) => {
+  const sellerAddress = auction.value.sellerAddress || auction.value.artwork?.creator
+
+  if (sellerAddress && sellerAddress !== '0x...' && userStore.isConnected) {
+    try {
+      ElMessage.info('正在发起支付确认...')
+      const { ethers } = await import('ethers')
+      const provider = new ethers.BrowserProvider(window.ethereum)
+      const signer = await provider.getSigner()
+
+      if (!ethers.isAddress(sellerAddress)) {
+        throw new Error('invalid address')
+      }
+
+      const tx = await signer.sendTransaction({
+        to: sellerAddress,
+        value: ethers.parseEther(winAmount.toString())
+      })
+
+      ElMessage.info('交易已发送，正在同步状态...')
+      await tx.wait()
+
+      // 成功后刷新余额
+      await userStore.refreshBalance()
+
+      ElMessageBox.alert(
+        `恭喜！您以 ${formatPrice(winAmount)} ETH 拍得作品《${auction.value.artwork?.name}》！\n\n交易哈希: ${tx.hash.slice(0, 10)}...`,
+        '竞拍成功',
+        { confirmButtonText: '确定', type: 'success' }
+      )
+    } catch (error: any) {
+      console.error('支付失败:', error)
+      ElMessageBox.alert(
+        `恭喜！您已拍得作品《${auction.value.artwork?.name}》！\n\n请稍后完成支付以获得作品所有权。`,
+        '竞拍成功（待支付）',
+        { confirmButtonText: '确定', type: 'success' }
+      )
+    }
+  } else {
+    ElMessageBox.alert(
+      `恭喜！您以 ${formatPrice(winAmount)} ETH 拍得作品《${auction.value.artwork?.name}》！`,
+      '竞拍成功',
+      { confirmButtonText: '确定', type: 'success' }
+    )
+  }
 }
 
 // 最终结算结果
@@ -464,7 +722,7 @@ const finalizeBidResult = async (isWinner: boolean) => {
 }
 
 // 参与竞拍
-const handleBid = async () => {
+const handleBid = async (skipConfirm = false) => {
   if (!userStore.isConnected) {
     ElMessage.warning('请先连接钱包'); return
   }
@@ -474,16 +732,34 @@ const handleBid = async () => {
     ElMessage.error('该拍卖已结束或已成交，无法继续出价'); return
   }
 
+  // 出价前强制刷新一次余额，确保数据最新
+  await userStore.refreshBalance()
+
   if (bidAmount.value < minBid.value) {
     ElMessage.warning(`最低出价必须大于 ${formatPrice(minBid.value)} ETH`); return
   }
 
-  try {
-    await ElMessageBox.confirm(
-      `您确定要出价 ${formatPrice(bidAmount.value)} ETH 吗？如果没有竞争者，您将直接成交该作品。`, '确认出价',
-      { confirmButtonText: '确定', cancelButtonText: '取消', type: 'info' }
+  // 检查余额是否足够
+  const bidAmountInEth = Number(bidAmount.value)
+  const myBalance = parseFloat(userStore.balance)
+
+  if (bidAmountInEth > myBalance) {
+    ElMessageBox.alert(
+      `您的出价 ${formatPrice(bidAmountInEth)} ETH 超出您当前钱包余额 ${formatPrice(myBalance)} ETH。\n\n余额不足，无法参与竞拍。`,
+      '余额不足',
+      { confirmButtonText: '确定', type: 'danger' }
     )
-  } catch { return }
+    return
+  }
+
+  if (!skipConfirm) {
+    try {
+      await ElMessageBox.confirm(
+        `您确定要出价 ${formatPrice(bidAmount.value)} ETH 吗？5秒后若无更高出价，您将获得该作品。`, '确认出价',
+        { confirmButtonText: '确定', cancelButtonText: '取消', type: 'info' }
+      )
+    } catch { return }
+  }
 
   bidding.value = true
 
@@ -493,69 +769,94 @@ const handleBid = async () => {
     amount: Number(bidAmount.value),
     createdAt: Date.now()
   }
-  bidHistory.value = [userBid, ...bidHistory.value]
-  auction.value.highestBid = bidAmount.value.toString()
-  auction.value.highestBidder = userStore.address
-  
+
   // 同步出价到数据库
   try {
-    await recordBid({
-      auctionId: auction.value.auctionId,
+    const res = await recordBid({
+      auctionId: auction.value.id || auction.value.auctionId,
       bidderAddress: userStore.address,
-      amount: bidAmount.value
+      amount: bidAmount.value.toString() // 使用字符串提交，保证精度
+    })
+
+    if (res && res.data) {
+      // 标记为已参与，后续别人加价将弹出提示
+      hasParticipated.value = true
+
+      // 数据库同步成功，再更新本地状态
+      bidHistory.value = [userBid, ...bidHistory.value]
+      auction.value.highestBid = bidAmount.value.toString()
+      auction.value.highestBidder = userStore.address
+
+      // 重置超时状态：我是最新出价者，等待其他人
+      lastBidTime.value = Date.now()
+      lastBidder.value = userStore.address
+      isMyTurn.value = false // 我刚出过价，必须等别人出价后才能再出
+      startTimeoutCountdown()
+
+      ElMessage.success('出价已提交！等待其他竞拍者...')
+      
+      // 立即同步一次最新历史
+      await refreshBidHistory()
+    }
+  } catch (err: any) {
+    console.error('Failed to record bid to DB:', err)
+    const errorMsg = err.response?.data?.message || '服务器繁忙，请稍后再试'
+    ElMessage.error(`出价失败: ${errorMsg}`)
+  } finally {
+    bidding.value = false
+  }
+}
+
+// 余额超出时的结算处理
+const handleBalanceExceededSettle = async () => {
+  if (isCancelled.value || battleState.value === 'success') return
+
+  await refreshBidHistory()
+
+  const topBid = bidHistory.value[0]
+  if (!topBid) return
+
+  const winner = topBid.bidderAddress
+  const winAmount = Number(topBid.amount)
+
+  settleTime.value = dayjs().format('YYYY-MM-DD HH:mm:ss')
+  isCancelled.value = true
+  battleState.value = winner.toLowerCase() === userStore.address?.toLowerCase() ? 'success' : 'cancelled'
+
+  auction.value.highestBid = winAmount.toString()
+  auction.value.highestBidder = winner
+  auction.value.status = 4
+  auction.value.endTime = settleTime.value
+
+  try {
+    await updateAuctionStatus(auction.value.auctionId, {
+      status: 4,
+      highestBid: winAmount,
+      highestBidder: winner
     })
   } catch (err) {
-    console.error('Failed to record bid to DB:', err)
+    console.error('Failed to sync auction status:', err)
   }
 
-  ElMessage.success('出价已提交，正在确认竞争状态...')
-
-  if (pendingBotTimer.value) clearTimeout(pendingBotTimer.value)
-
-  let botOutbid = false
-  // 20% 概率在 0.5~1.5 秒内被机器人超过
-  if (Math.random() < 0.2) {
-    const delay = Math.floor(Math.random() * 1000) + 500
-    botOutbid = true
-    pendingBotTimer.value = setTimeout(() => {
-      if (isCancelled.value || battleState.value !== 'active') return
-      const inc = Number(auction.value.minIncrement) || 0.1
-      const botBid = makeBotBid(Number(auction.value.highestBid), inc, 0)
-      bidHistory.value = [botBid, ...bidHistory.value]
-      auction.value.highestBid = botBid.amount.toString()
-      auction.value.highestBidder = botBid.bidderAddress
-      bidAmount.value = parseFloat((botBid.amount + inc).toFixed(4))
-      ElMessage.warning(`${botBid.bidderName} 刚刚出价 ${formatPrice(botBid.amount)} ETH，已超过您的价格`)
-      
-      // 如果被机器人超过了，再等一会儿结算（或者继续竞拍）
-      setTimeout(async () => {
-        if (isCancelled.value) return
-        const isWinner = auction.value.highestBidder?.toLowerCase() === userStore.address?.toLowerCase()
-        await finalizeBidResult(isWinner)
-      }, 2000)
-    }, delay)
+  const mockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
+  mockBids[auction.value.auctionId] = {
+    id: auction.value.auctionId,
+    title: auction.value.artwork?.name,
+    imageUrl: auction.value.artwork?.imageUrl,
+    currentPrice: winAmount.toString(),
+    myPrice: bidHistory.value.find((b: any) => b.bidderAddress?.toLowerCase() === userStore.address?.toLowerCase())?.amount,
+    endTime: settleTime.value,
+    bidStatus: winner.toLowerCase() === userStore.address?.toLowerCase() ? 'won' : 'lost'
   }
-
-  // 如果没有机器人出价，缩短等待时间，立即成交
-  if (!botOutbid) {
-    setTimeout(async () => {
-      if (isCancelled.value) return
-      const isWinner = auction.value.highestBidder?.toLowerCase() === userStore.address?.toLowerCase()
-      if (isWinner) {
-        await finalizeBidResult(true)
-      }
-    }, 1500)
-  }
-
-  bidding.value = false
+  localStorage.setItem('MOCK_USER_BIDS', JSON.stringify(mockBids))
 }
 
 // 退出竞拍
 const handleCancelBid = async () => {
   try {
     await ElMessageBox.confirm(
-      '您确定要退出竞拍吗？系统将按当前最高出价结算，作品归属最高出价者。',
-      '操作确认',
+      '您确定要放弃加价吗？系统将按当前最高出价结算，作品归属最高出价者。',
+      '放弃竞拍',
       { confirmButtonText: '确定', cancelButtonText: '我再想想', type: 'warning' }
     )
   } catch {
@@ -563,34 +864,49 @@ const handleCancelBid = async () => {
   }
 
   if (!auction.value) return
-  if (pendingBotTimer.value) { clearTimeout(pendingBotTimer.value); pendingBotTimer.value = null }
 
-  const sortedBids = [...bidHistory.value].sort((a, b) => Number(b.amount || 0) - Number(a.amount || 0))
-  const topBid = sortedBids[0]
-  const finalHighestBid = Number(topBid?.amount || auction.value.highestBid || 0)
-  const finalHighestBidder = topBid?.bidderAddress || auction.value.highestBidder
+  // 确保结算前获取最新出价
+  await refreshBidHistory()
 
-  if (!finalHighestBidder || finalHighestBid <= 0) {
-    ElMessage.warning('当前没有有效最高出价，无法执行结算')
+  const topBid = bidHistory.value[0]
+  if (!topBid) {
+    ElMessage.warning('当前没有有效出价，无法执行结算')
     return
   }
 
+  const finalHighestBid = Number(topBid.amount)
+  const finalHighestBidder = topBid.bidderAddress
+
   settleTime.value = dayjs().format('YYYY-MM-DD HH:mm:ss')
   isCancelled.value = true
-  battleState.value = 'cancelled'
+  
+  const isWinner = finalHighestBidder.toLowerCase() === userStore.address?.toLowerCase()
+  battleState.value = isWinner ? 'success' : 'cancelled'
 
   auction.value.highestBid = finalHighestBid.toString()
   auction.value.highestBidder = finalHighestBidder
   auction.value.status = 4
   auction.value.endTime = settleTime.value
 
+  // 同步到数据库
+  try {
+    await updateAuctionStatus(auction.value.id || auction.value.auctionId, {
+      status: 4,
+      highestBid: finalHighestBid,
+      highestBidder: finalHighestBidder
+    })
+  } catch (err) {
+    console.error('Failed to settle auction on cancel:', err)
+  }
+
+  // 本地存储
   const myBid = bidHistory.value.find(
     b => b.bidderAddress?.toLowerCase() === userStore.address?.toLowerCase()
   )
-  const isWinner = finalHighestBidder.toLowerCase() === userStore.address?.toLowerCase()
   const mockBids = JSON.parse(localStorage.getItem('MOCK_USER_BIDS') || '{}')
-  mockBids[auction.value.auctionId] = {
-    id: auction.value.auctionId,
+  const auctionId = auction.value.id || auction.value.auctionId
+  mockBids[auctionId] = {
+    id: auctionId,
     title: auction.value.artwork?.name,
     imageUrl: auction.value.artwork?.imageUrl,
     currentPrice: finalHighestBid.toString(),
@@ -600,21 +916,15 @@ const handleCancelBid = async () => {
   }
   localStorage.setItem('MOCK_USER_BIDS', JSON.stringify(mockBids))
 
-  try {
-    await updateAuctionStatus(auction.value.auctionId, {
-      status: 4,
-      highestBid: finalHighestBid,
-      highestBidder: finalHighestBidder
-    })
-  } catch (err) {
-    console.error('Failed to settle auction on cancel:', err)
+  if (isWinner) {
+    await handleWinnerPayment(finalHighestBidder, finalHighestBid)
+  } else {
+    ElMessageBox.alert(
+      `已完成结算，作品归属 ${isWinner ? '您' : formatAddress(finalHighestBidder)}，成交价 ${formatPrice(finalHighestBid)} ETH。`,
+      '结算完成',
+      { confirmButtonText: '确定', type: 'success' }
+    )
   }
-
-  ElMessageBox.alert(
-    `已按最高出价完成结算，作品归属 ${formatAddress(finalHighestBidder)}，成交价 ${formatPrice(finalHighestBid)} ETH。`,
-    '已退出并结算',
-    { confirmButtonText: '确定', type: 'success' }
-  )
 }
 
 // ==========================================
@@ -634,8 +944,23 @@ const minBid = computed(() => {
   const highest = Number(auction.value.highestBid) || 0
   const starting = Number(auction.value.startingPrice) || 0
   const increment = Number(auction.value.minIncrement) || 0.01
-  return highest > 0 ? Number((highest + increment).toFixed(4)) : starting
+  
+  // 如果没有人出价，最低出价为 起拍价 + 最低加价 (根据用户新需求)
+  if (!auction.value.highestBidder || auction.value.highestBidder === '0x...') {
+    return Number((starting + increment).toFixed(4))
+  }
+  
+  // 有人出价时，最低出价 = 当前最高价 + 最低加价
+  const result = Number((highest + increment).toFixed(4))
+  return result
 })
+
+// 监听最低出价变化，自动更新输入框
+watch(minBid, (newVal) => {
+  if (bidAmount.value < newVal) {
+    bidAmount.value = newVal
+  }
+}, { immediate: true })
 
 const canEndAuction = computed(() => {
   if (!auction.value || !userStore.isConnected) return false
@@ -650,7 +975,7 @@ const canEndAuction = computed(() => {
 
 const formatAddress = (address: string | undefined | null) => {
   if (!address || typeof address !== 'string' || address.length < 10) {
-    return '0x' + Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join('')
+    return '0x...'
   }
   return `${address.slice(0, 6)}...${address.slice(-4)}`
 }
@@ -716,7 +1041,7 @@ const fetchAuctionDetail = async () => {
       } else if (savedBid?.bidStatus === 'lost') {
         // 已竞拍失败：强制显示为已结束且不可再操作
         auction.value.highestBid = savedBid.currentPrice || auction.value.highestBid
-        // 保留原最高出价者（可能是机器人或他人），无需等于我
+        // 保留原最高出价者，无需等于我
         auction.value.status = 4
         auction.value.endTime = savedBid.endTime || Date.now()
         battleState.value = 'cancelled'
@@ -746,7 +1071,11 @@ const fetchAuctionDetail = async () => {
     bidAmount.value = Number(auction.value.highestBid) + Number(auction.value.minIncrement)
     loading.value = false
 
-    if (battleState.value === 'waiting') simulateInitialBots()
+    // 启动轮询获取实时出价
+    if (battleState.value === 'waiting') {
+      battleState.value = 'active'
+      startBidPolling()
+    }
     return
   }
 
@@ -764,8 +1093,21 @@ const fetchAuctionDetail = async () => {
 
     const historyRes = await getBidHistory(Number(id))
     bidHistory.value = historyRes.data || []
+    
+    // 初始化参与状态：检查当前用户是否已在该出价历史中
+    if (userStore.address && bidHistory.value.length > 0) {
+      hasParticipated.value = bidHistory.value.some(
+        (b: any) => b.bidderAddress?.toLowerCase() === userStore.address?.toLowerCase()
+      )
+    }
+
     bidAmount.value = minBid.value
-    if (battleState.value === 'waiting') simulateInitialBots()
+    
+    // 启动轮询获取实时出价
+    if (battleState.value === 'waiting') {
+      battleState.value = 'active'
+      startBidPolling()
+    }
   } catch (error) {
     console.error('Failed to fetch auction:', error)
     ElMessage.error('加载拍卖详情失败')
@@ -828,12 +1170,39 @@ const handleAuctionEnd = () => {
   })
 }
 
-onMounted(() => {
-  fetchAuctionDetail()
+onMounted(async () => {
+  await fetchAuctionDetail()
+  
+  // 如果当前最高出价者是我，则禁用出价按钮
+  if (auction.value?.highestBidder?.toLowerCase() === userStore.address?.toLowerCase()) {
+    isMyTurn.value = false
+    startTimeoutCountdown()
+  } else {
+    isMyTurn.value = true
+  }
+})
+
+onUnmounted(() => {
+  stopBidPolling()
+  stopTimeoutCountdown()
 })
 
 watch(() => route.params.id, (newId) => {
-  if (newId) fetchAuctionDetail()
+  if (newId) {
+    stopBidPolling()
+    fetchAuctionDetail()
+  }
+})
+
+// 监听用户钱包地址变化，重新检查参与状态
+watch(() => userStore.address, (newAddr) => {
+  if (newAddr && bidHistory.value.length > 0) {
+    hasParticipated.value = bidHistory.value.some(
+      (b: any) => b.bidderAddress?.toLowerCase() === newAddr.toLowerCase()
+    )
+  } else {
+    hasParticipated.value = false
+  }
 })
 </script>
 
@@ -1053,6 +1422,23 @@ watch(() => route.params.id, (newId) => {
           color: #fff;
           font-family: monospace;
           justify-content: flex-end;
+        }
+
+        .timeout-countdown {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-end;
+          gap: 4px;
+          .timeout-text {
+            font-size: 20px;
+            font-weight: 700;
+            color: #67c23a;
+            font-family: monospace;
+          }
+          .timeout-hint {
+            font-size: 11px;
+            color: rgba(255,255,255,0.6);
+          }
         }
       }
     }

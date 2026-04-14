@@ -136,7 +136,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { ArrowLeft, User, ArrowDown, ArrowUp, CircleClose, StarFilled } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
-import { getAuctionById } from '@/api/auction'
+import { getAuctionById, getBidHistory } from '@/api/auction'
 import { mockAuctions } from '@/utils/mockData'
 import { formatPrice } from '@/utils/format'
 import type { Auction } from '@/types'
@@ -149,7 +149,7 @@ const loading = ref(false)
 const auction = ref<Auction | null>(null)
 const bidHistory = ref<any[]>([])
 const myLastBid = ref('0')
-const winnerInfo = ref({ name: 'Robot_Winner', address: '' })
+const winnerInfo = ref({ name: 'Unknown', address: '' })
 const showAllBids = ref(false)
 
 const displayedBids = computed(() => {
@@ -168,7 +168,7 @@ const isMe = (input: any) => resolveAddress(input).toLowerCase() === userStore.a
 
 const formatAddress = (input: any) => {
   const addr = resolveAddress(input)
-  if (!addr) return 'Unknown'
+  if (!addr || addr === 'Unknown' || addr.length < 10) return 'Unknown'
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`
 }
 
@@ -225,45 +225,30 @@ const fetchDetail = async () => {
     } as any
   }
 
-  // 模拟竞拍失败的出价记录对比
+  // 获取真实竞拍数据
   if (auction.value) {
-    const bids = []
-    // 如果本地有记录，使用本地记录的价格，否则用作品的最高价
-    const winPrice = savedBid ? Number(savedBid.currentPrice) : (Number(auction.value.highestBid) || 2.5)
-    
-    // 获胜者信息（如果是 lost 状态，获胜者是一个机器人）
-    winnerInfo.value = { 
-      name: `Robot_${Math.floor(Math.random()*900)+100}`,
-      address: '0x' + Math.random().toString(16).slice(2, 42)
+    // 获取出价历史
+    try {
+      const id = auction.value.auctionId || auction.value.id
+      const historyRes = await getBidHistory(Number(id))
+      if (historyRes.data && historyRes.data.length > 0) {
+        bidHistory.value = historyRes.data
+        myLastBid.value = savedBid?.myPrice || '0'
+        // 获取获胜者信息
+        const topBid = historyRes.data[0]
+        winnerInfo.value = {
+          name: topBid.bidderName || formatAddress(topBid.bidderAddress),
+          address: topBid.bidderAddress || ''
+        }
+      } else {
+        // 如果没有出价历史，使用默认值
+        bidHistory.value = []
+        myLastBid.value = savedBid?.myPrice || '0'
+      }
+    } catch (e) {
+      console.error('Failed to fetch bid history:', e)
+      myLastBid.value = savedBid?.myPrice || '0'
     }
-
-    // 第一条：获胜的机器人
-    bids.push({
-      bidderName: winnerInfo.value.name,
-      bidderAddress: winnerInfo.value.address,
-      amount: winPrice.toFixed(2),
-      createdAt: Date.now() - 3600000
-    })
-
-    // 我的最后一次出价（失败者出价低于获胜者）
-    myLastBid.value = savedBid ? savedBid.myPrice : (winPrice - 0.2).toFixed(2)
-    bids.push({
-      bidderName: '您',
-      bidderAddress: userStore.address,
-      amount: myLastBid.value,
-      createdAt: Date.now() - 7200000
-    })
-
-    // 更多竞争记录
-    for (let i = 2; i <= 6; i++) {
-      bids.push({
-        bidderName: `Robot_${Math.floor(Math.random()*900)+100}`,
-        bidderAddress: '0x' + Math.random().toString(16).slice(2, 42),
-        amount: (winPrice - 0.2 * i).toFixed(2),
-        createdAt: Date.now() - (i + 1) * 3600000
-      })
-    }
-    bidHistory.value = bids
   }
 
   loading.value = false

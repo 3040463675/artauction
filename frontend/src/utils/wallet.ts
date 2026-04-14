@@ -24,25 +24,23 @@ export const connectWallet = async (): Promise<string> => {
     const accounts = await provider.send('eth_requestAccounts', [])
     const address = accounts[0]
 
-    // 获取余额
-    const balance = await provider.getBalance(address)
-    const formattedBalance = ethers.formatEther(balance)
+    // 更新store地址
+    const userStore = useUserStore()
+    userStore.setAddress(address)
+
+    // 调用统一的刷新余额方法
+    await refreshBalance()
 
     // 获取链ID
     const network = await provider.getNetwork()
     const chainId = Number(network.chainId)
-
-    // 更新store
-    const userStore = useUserStore()
-    userStore.setAddress(address)
-    userStore.setBalance(formattedBalance.slice(0, 6))
     userStore.setChainId(chainId)
 
-    // 确保数据库中存在该用户地址（触发后端创建或更新nonce）
+    // 确保数据库中存在该用户地址
     try {
       await request.get('/auth/nonce', { params: { address } })
     } catch {
-      // 忽略后端不可用时的错误，保持前端连接流程不被打断
+      // 忽略后端不可用时的错误
     }
 
     return address
@@ -51,6 +49,21 @@ export const connectWallet = async (): Promise<string> => {
       throw new Error('用户拒绝连接')
     }
     throw error
+  }
+}
+
+// 刷新余额
+export const refreshBalance = async () => {
+  const userStore = useUserStore()
+  if (!userStore.address || !checkMetaMask()) return
+
+  try {
+    const { ethers } = await import('ethers')
+    const provider = new ethers.BrowserProvider(window.ethereum)
+    const bal = await provider.getBalance(userStore.address)
+    userStore.setBalance(ethers.formatEther(bal))
+  } catch (error) {
+    console.error('Failed to refresh balance:', error)
   }
 }
 
@@ -72,7 +85,6 @@ export const switchNetwork = async (chainId: number): Promise<void> => {
       params: [{ chainId: `0x${chainId.toString(16)}` }]
     })
   } catch (error: any) {
-    // 如果网络不存在，添加网络
     if (error.code === 4902) {
       await addNetwork(chainId)
     } else {
@@ -84,51 +96,31 @@ export const switchNetwork = async (chainId: number): Promise<void> => {
 // 添加网络
 export const addNetwork = async (chainId: number): Promise<void> => {
   const networks: Record<number, any> = {
-    // Hardhat 本地网络
     31337: {
       chainId: '0x7a69',
       chainName: 'Hardhat Local',
-      nativeCurrency: {
-        name: 'Ether',
-        symbol: 'ETH',
-        decimals: 18
-      },
+      nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
       rpcUrls: ['http://127.0.0.1:8545'],
       blockExplorerUrls: []
     },
-    // Ganache 本地网络
     1337: {
       chainId: '0x539',
       chainName: 'Ganache Local',
-      nativeCurrency: {
-        name: 'Ether',
-        symbol: 'ETH',
-        decimals: 18
-      },
+      nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
       rpcUrls: ['http://127.0.0.1:7545'],
       blockExplorerUrls: []
     },
-    // Sepolia 测试网
     11155111: {
       chainId: '0xaa36a7',
       chainName: 'Sepolia',
-      nativeCurrency: {
-        name: 'SepoliaETH',
-        symbol: 'ETH',
-        decimals: 18
-      },
+      nativeCurrency: { name: 'SepoliaETH', symbol: 'ETH', decimals: 18 },
       rpcUrls: ['https://sepolia.infura.io/v3/'],
       blockExplorerUrls: ['https://sepolia.etherscan.io/']
     },
-    // 以太坊主网
     1: {
       chainId: '0x1',
       chainName: 'Ethereum Mainnet',
-      nativeCurrency: {
-        name: 'Ether',
-        symbol: 'ETH',
-        decimals: 18
-      },
+      nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
       rpcUrls: ['https://mainnet.infura.io/v3/'],
       blockExplorerUrls: ['https://etherscan.io/']
     }
@@ -151,22 +143,30 @@ export const setupWalletListeners = () => {
 
   const userStore = useUserStore()
 
-  // 账户变更
-  window.ethereum.on('accountsChanged', (accounts: string[]) => {
+  // 账户切换
+  window.ethereum.on('accountsChanged', async (accounts: string[]) => {
+    console.log('[Wallet] Accounts changed:', accounts)
     if (accounts.length === 0) {
       disconnectWallet()
     } else {
       userStore.setAddress(accounts[0])
-      userStore.refreshBalance()
+      await refreshBalance()
     }
   })
 
-  // 网络变更
+  // 网络切换
   window.ethereum.on('chainChanged', (chainId: string) => {
+    console.log('[Wallet] Chain changed:', chainId)
     userStore.setChainId(parseInt(chainId, 16))
-    // 刷新页面以确保所有数据与新链一致
     window.location.reload()
   })
+
+  // 轮询余额以同步 MetaMask
+  setInterval(async () => {
+    if (userStore.isConnected) {
+      await refreshBalance()
+    }
+  }, 5000)
 }
 
 // 获取Provider
