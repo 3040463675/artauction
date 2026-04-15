@@ -48,9 +48,14 @@ export const verifyArtwork = (id: number | string, isVerified: boolean = true) =
   return request.post<ApiResponse<null>>(`/artworks/${id}/verify`, { isVerified })
 }
 
-// 驳回作品 (物理删除或标记驳回)
-export const rejectArtwork = (id: number | string) => {
-  return request.post<ApiResponse<null>>(`/artworks/${id}/reject`)
+// 驳回作品
+export const rejectArtwork = (id: number | string, reason?: string) => {
+  return request.post<ApiResponse<null>>(`/artworks/${id}/reject`, { reason })
+}
+
+// 终止拍卖
+export const terminateAuction = (id: number | string) => {
+  return request.post<ApiResponse<null>>(`/artworks/${id}/terminate`)
 }
 
 // 删除艺术品

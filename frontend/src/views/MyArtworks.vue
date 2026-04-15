@@ -18,6 +18,8 @@
           <el-radio-button value="pending">待审核</el-radio-button>
           <el-radio-button value="ready">可拍卖</el-radio-button>
           <el-radio-button value="sold">已拍出</el-radio-button>
+          <el-radio-button value="rejected">被驳回</el-radio-button>
+          <el-radio-button value="terminated">已终止</el-radio-button>
         </el-radio-group>
       </div>
 
@@ -41,6 +43,13 @@
                   <div class="card-content">
                     <h3 class="title">{{ item.name }}</h3>
                     <p class="desc">{{ item.description || '暂无描述' }}</p>
+                    
+                    <!-- 驳回提示 -->
+                    <div v-if="item.status === 3" class="rejection-hint">
+                      <el-icon><Warning /></el-icon>
+                      <span>查看驳回原因并修改</span>
+                    </div>
+
                     <div class="meta-row">
                       <span class="token">#{{ item.tokenId }}</span>
                     </div>
@@ -61,7 +70,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, Warning } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getArtworksByOwner } from '@/api/artwork'
 import { useUserStore } from '@/stores/user'
@@ -74,6 +83,8 @@ interface MyArtworkItem {
   imageUrl: string
   isVerified: boolean
   isOnAuction: boolean
+  status?: number // 0: 待审核, 1: 已通过/可拍卖, 2: 已拍出, 3: 已驳回, 4: 已终止
+  auditReason?: string | null
   auctions?: Array<{
     id?: number
     auctionId?: number
@@ -97,7 +108,9 @@ const getLatestAuction = (item: MyArtworkItem) => {
 }
 
 const getStatusKey = (item: MyArtworkItem) => {
-  if (!item.isVerified) return 'pending'
+  if (item.status === 4) return 'terminated'
+  if (item.status === 3) return 'rejected'
+  if (item.status === 0 || !item.isVerified) return 'pending'
 
   const latestAuction = getLatestAuction(item)
   if (latestAuction?.status === 4 && latestAuction.highestBidder) return 'sold'
@@ -128,6 +141,15 @@ const goToCreate = () => {
 }
 
 const viewDetail = (item: MyArtworkItem) => {
+  // 如果是被驳回的作品，跳转到发布页（编辑模式）查看理由并修改
+  if (item.status === 3) {
+    router.push({ 
+      path: '/create', 
+      query: { id: item.id } 
+    })
+    return
+  }
+
   const latestAuction = getLatestAuction(item)
 
   const targetId = latestAuction?.auctionId || latestAuction?.id
@@ -142,6 +164,8 @@ const viewDetail = (item: MyArtworkItem) => {
 const getStatusText = (item: MyArtworkItem) => {
   const key = getStatusKey(item)
   if (key === 'pending') return '待审核'
+  if (key === 'rejected') return '已驳回'
+  if (key === 'terminated') return '已终止'
   if (key === 'sold') return '已拍出'
   return '可拍卖'
 }
@@ -149,13 +173,15 @@ const getStatusText = (item: MyArtworkItem) => {
 const getStatusTagType = (item: MyArtworkItem) => {
   const key = getStatusKey(item)
   if (key === 'pending') return 'warning'
+  if (key === 'rejected') return 'danger'
+  if (key === 'terminated') return 'info'
   if (key === 'sold') return 'info'
   return 'success'
 }
 
 const getStatusTagEffect = (item: MyArtworkItem) => {
   const key = getStatusKey(item)
-  return key === 'sold' ? 'dark' : 'light'
+  return (key === 'sold' || key === 'terminated') ? 'dark' : 'light'
 }
 
 onMounted(() => {
@@ -274,27 +300,40 @@ onMounted(() => {
       text-overflow: ellipsis;
     }
 
-    .price-info {
-      display: flex;
-      flex-direction: column;
-      margin-bottom: 20px;
-
-      .label {
-        font-size: 12px;
-        color: #94a3b8;
-        margin-bottom: 4px;
-      }
-
-      .price {
-        font-size: 20px;
-        font-weight: 800;
-        color: #3b82f6;
-      }
+    .desc {
+      margin: 0 0 16px 0;
+      font-size: 14px;
+      color: #64748b;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      line-height: 1.5;
     }
 
-    .card-footer {
-      .el-button {
-        width: 100%;
+    .rejection-hint {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 12px;
+      color: #ef4444;
+      font-size: 13px;
+      font-weight: 600;
+      background: #fef2f2;
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid #fee2e2;
+    }
+
+    .meta-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+
+      .token {
+        font-family: monospace;
+        font-weight: 600;
+        color: #94a3b8;
       }
     }
   }

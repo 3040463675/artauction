@@ -84,6 +84,6 @@ export const useUserStore = defineStore('user', () => {
 }, {
   persist: {
     key: 'user-store',
-    paths: ['address', 'role']
+    paths: ['address', 'role', 'userInfo']
   }
 })

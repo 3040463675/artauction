@@ -29,18 +29,19 @@
           </template>
         </el-table-column>
         
-        <el-table-column label="当前价 / 起拍价" width="180" align="right">
+        <el-table-column :label="filterStatus === 'all' ? '成交价' : '起拍价'" width="180" align="right">
           <template #default="{ row }">
             <div class="price-display">
-              <div class="current">{{ row.currentPrice || row.startPrice }} ETH</div>
-              <div class="start">起拍: {{ row.startPrice }} ETH</div>
+              <div class="current" v-if="Number(row.status) === 4">{{ Number(row.highestBid).toFixed(2) }} ETH</div>
+              <div class="current" v-else>{{ Number(row.startingPrice).toFixed(2) }} ETH</div>
+              <div class="start" v-if="Number(row.status) !== 4">起拍: {{ Number(row.startingPrice).toFixed(2) }} ETH</div>
             </div>
           </template>
         </el-table-column>
 
         <el-table-column label="出价次数" width="100" align="center">
           <template #default="{ row }">
-            <el-tag size="small" type="info">{{ row.bidsCount || 0 }} 次</el-tag>
+            <el-tag size="small" type="info">{{ row.bidCount || 0 }} 次</el-tag>
           </template>
         </el-table-column>
 
@@ -151,9 +152,11 @@ const filteredList = computed(() => {
     return list.value.filter(item => Number(item.status) === 1)
   }
   if (filterStatus.value === 'all') {
+    // “全部拍卖”选项卡显示已成交的作品
     return list.value.filter(item => Number(item.status) === 4)
   }
   if (filterStatus.value === 'ended') {
+    // “已结束”选项卡显示已结束（流拍）或已取消的作品
     return list.value.filter(item => [2, 3].includes(Number(item.status)))
   }
   return list.value
@@ -167,10 +170,14 @@ const fetchData = async () => {
       includeSettled: true
     }
 
+    // 根据选项卡设置请求状态
     if (filterStatus.value === 'active') {
       params.status = 1
     } else if (filterStatus.value === 'all') {
       params.status = 4
+    } else if (filterStatus.value === 'ended') {
+      // 包含已结束和已取消
+      params.includeSettled = true 
     }
 
     const res = await getAuctions(params)
@@ -254,7 +261,7 @@ const getStatusType = (status: number) => {
 }
 
 const getStatusText = (status: number) => {
-  const texts: any = { 0: '待开始', 1: '进行中', 2: '已结束', 3: '已流拍', 4: '已拍卖' }
+  const texts: any = { 0: '待开始', 1: '进行中', 2: '已结束', 3: '已终止', 4: '已成交' }
   return texts[status] || '未知'
 }
 
@@ -265,6 +272,15 @@ const formatDate = (date: string) => {
 watch(filterStatus, () => {
   queryParams.page = 1
   fetchData()
+})
+
+const handleFilterChange = () => {
+  queryParams.page = 1
+  fetchData()
+}
+
+watch(filterStatus, () => {
+  handleFilterChange()
 })
 
 onMounted(() => {

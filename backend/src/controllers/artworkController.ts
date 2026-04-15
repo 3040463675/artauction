@@ -36,6 +36,14 @@ export const getArtworks = async (req: Request, res: Response, next: NextFunctio
       where.isOnAuction = true
     } else if (status === 'verified') {
       where.isVerified = true
+    } else if (status === 'pending') {
+      where.status = 0
+    } else if (status === 'approved') {
+      where.status = 1
+    } else if (status === 'sold') {
+      where.status = 2
+    } else if (status === 'rejected') {
+      where.status = 3
     }
 
     const { count, rows } = await Artwork.findAndCountAll({
@@ -157,7 +165,9 @@ export const createArtwork = async (req: Request, res: Response, next: NextFunct
       categoryId,
       metadata,
       isVerified: false,
-      isOnAuction: false
+      isOnAuction: false,
+      status: 0, // 待审核
+      auditReason: null
     })
 
     res.success(artwork)
@@ -170,7 +180,7 @@ export const createArtwork = async (req: Request, res: Response, next: NextFunct
 export const updateArtwork = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params
-    const { name, description, categoryId } = req.body
+    const { name, description, categoryId, metadata } = req.body
 
     const artwork = await Artwork.findByPk(id)
 
@@ -178,11 +188,20 @@ export const updateArtwork = async (req: Request, res: Response, next: NextFunct
       throw new AppError('艺术品不存在', -1, 404)
     }
 
-    await artwork.update({
+    const updateData: any = {
       name: name || artwork.name,
       description: description || artwork.description,
-      categoryId: categoryId || artwork.categoryId
-    })
+      categoryId: categoryId || artwork.categoryId,
+      metadata: metadata || artwork.metadata
+    }
+
+    // 如果是被驳回的作品重新提交，重置状态为待审核
+    if (artwork.status === 3) {
+      updateData.status = 0
+      updateData.auditReason = null
+    }
+
+    await artwork.update(updateData)
 
     res.success(artwork)
   } catch (error) {
@@ -234,7 +253,7 @@ export const verifyArtwork = async (req: Request, res: Response, next: NextFunct
           minIncrement,
           startTime,
           endTime,
-          highestBid: '0',
+          highestBid: startingPrice, // 审核通过时，最高价初始化为起拍价
           status: AuctionStatus.Active
         })
       } else if (activeAuction.status === AuctionStatus.Pending) {
@@ -243,15 +262,25 @@ export const verifyArtwork = async (req: Request, res: Response, next: NextFunct
         await activeAuction.update({
           status: AuctionStatus.Active,
           startingPrice,
+          highestBid: startingPrice, // 同样同步更新最高价
           minIncrement,
           startTime,
           endTime
         })
       }
 
-      await artwork.update({ isVerified: true, isOnAuction: true })
+      await artwork.update({ 
+        isVerified: true, 
+        isOnAuction: true,
+        status: 1, // 已通过
+        auditReason: null 
+      })
     } else {
-      await artwork.update({ isVerified: false, isOnAuction: false })
+      await artwork.update({ 
+        isVerified: false, 
+        isOnAuction: false,
+        status: 0 // 撤回审核后变回待审核状态
+      })
       await Auction.update(
         { status: AuctionStatus.Cancelled },
         {
@@ -269,22 +298,37 @@ export const verifyArtwork = async (req: Request, res: Response, next: NextFunct
   }
 }
 
-// 驳回并删除艺术品（管理员权限）
+// 驳回艺术品（管理员权限）
 export const rejectArtwork = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params
+    const { reason } = req.body
+    
     if (!req.user) throw new AppError('未授权', -1, 401)
 
     const artwork = await Artwork.findByPk(id)
     if (!artwork) throw new AppError('艺术品不存在', -1, 404)
 
-    // 删除关联的拍卖
-    await Auction.destroy({ where: { artworkId: id } })
+    // 状态变更为已驳回
+    await artwork.update({
+      status: 3, // 已驳回
+      auditReason: reason || '不符合平台要求',
+      isVerified: false,
+      isOnAuction: false
+    })
     
-    // 物理删除作品
-    await artwork.destroy()
+    // 取消关联的未开始或正在进行的拍卖
+    await Auction.update(
+      { status: AuctionStatus.Cancelled },
+      {
+        where: {
+          artworkId: id,
+          status: { [Op.in]: [AuctionStatus.Pending, AuctionStatus.Active] }
+        }
+      }
+    )
     
-    res.success(null, '驳回成功，作品已移除')
+    res.success(artwork, '作品已驳回')
   } catch (error) {
     next(error)
   }
@@ -311,6 +355,44 @@ export const deleteArtwork = async (req: Request, res: Response, next: NextFunct
 
     await artwork.destroy()
     res.success(null, '删除成功')
+  } catch (error) {
+    next(error)
+  }
+}
+
+// 终止拍卖（所有者权限）
+export const terminateAuction = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params
+    if (!req.user) throw new AppError('未授权', -1, 401)
+
+    const artwork = await Artwork.findByPk(id)
+    if (!artwork) throw new AppError('艺术品不存在', -1, 404)
+
+    // 只能由所有者终止
+    if (artwork.ownerAddress.toLowerCase() !== req.user.address.toLowerCase()) {
+      throw new AppError('只有作品所有者可以终止拍卖', -1, 403)
+    }
+
+    // 更新作品状态为已终止
+    await artwork.update({
+      status: 4, // 已终止
+      isOnAuction: false,
+      isVerified: false
+    })
+
+    // 同步取消关联的正在进行或待开始的拍卖
+    await Auction.update(
+      { status: AuctionStatus.Cancelled },
+      {
+        where: {
+          artworkId: id,
+          status: { [Op.in]: [AuctionStatus.Pending, AuctionStatus.Active] }
+        }
+      }
+    )
+
+    res.success(artwork, '拍卖已终止')
   } catch (error) {
     next(error)
   }

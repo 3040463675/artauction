@@ -3,7 +3,10 @@
     <div class="container">
       <div class="page-header">
         <div class="header-left">
-          <h1>我的竞拍</h1>
+          <div class="title-row">
+            <h1>我的竞拍</h1>
+            <el-tag v-if="userStore.userInfo?.enabled === false" type="danger" effect="dark" class="ban-tag">你已被封禁</el-tag>
+          </div>
           <p class="subtitle">追踪您参与的所有艺术品拍卖记录</p>
         </div>
       </div>
@@ -212,12 +215,34 @@ onMounted(() => {
 
 .page-header {
   margin-bottom: 32px;
-  h1 {
-    margin: 0 0 8px 0;
-    font-size: 32px;
-    font-weight: 800;
-    color: #1a1a2e;
+
+  .title-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 8px;
+
+    h1 {
+      margin: 0;
+      font-size: 32px;
+      font-weight: 800;
+      color: #1a1a2e;
+    }
+
+    .ban-tag {
+      font-weight: bold;
+      padding: 4px 12px;
+      border-radius: 8px;
+      animation: pulse 2s infinite;
+    }
   }
+
+  @keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.6; }
+    100% { opacity: 1; }
+  }
+
   .subtitle {
     margin: 0;
     color: #64748b;

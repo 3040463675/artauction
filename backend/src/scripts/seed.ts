@@ -175,7 +175,8 @@ const seedDatabase = async () => {
           ownerAddress: data.creator,
           categoryId: categoryId,
           isVerified: true, // 全部设置为已验证
-          isOnAuction: true
+          isOnAuction: true,
+          status: 1 // 1: 已通过
         }
       })
 
@@ -204,7 +205,11 @@ const seedDatabase = async () => {
       })
 
       // 强制更新：确保作品都在拍卖中，且状态为 Active (1)，结束时间重置
-      await artwork.update({ isOnAuction: true, isVerified: true })
+      await artwork.update({ 
+        isOnAuction: true, 
+        isVerified: true,
+        status: 1 // 1: 已通过
+      })
       await auctionRecord.update({
         status: AuctionStatus.Active,
         endTime: fixedEndTime,

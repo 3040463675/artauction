@@ -96,6 +96,7 @@ import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import { useUserStore } from '@/stores/user'
 import { connectWallet as connect, disconnectWallet as disconnect, setupWalletListeners } from '@/utils/wallet'
 import { formatPrice } from '@/utils/format'
+import { request } from '@/api/request'
 
 const userStore = useUserStore()
 const router = useRouter()
@@ -133,12 +134,23 @@ const logout = () => {
 }
 
 onMounted(async () => {
-  // 启动钱包监听（账户切换、余额轮询）
+  // 启动钱包监听（账户切换、余额轮询、用户信息同步）
   setupWalletListeners()
 
-  // 检查是否已连接并强制刷新一次余额
+  // 检查是否已连接
   if (userStore.isConnected) {
+    // 1. 强制刷新一次余额
     await userStore.refreshBalance()
+    
+    // 2. 立即同步一次用户信息（确保刷新页面后封禁状态准确）
+    try {
+      const res: any = await request.get('/auth/me')
+      if (res.data) {
+        userStore.setUserInfo(res.data)
+      }
+    } catch (err) {
+      console.warn('[App] Failed to sync user info on mount:', err)
+    }
   }
 })
 </script>

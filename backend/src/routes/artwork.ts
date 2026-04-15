@@ -8,7 +8,8 @@ import {
   updateArtwork,
   verifyArtwork,
   rejectArtwork,
-  deleteArtwork
+  deleteArtwork,
+  terminateAuction
 } from '../controllers/artworkController'
 import { authMiddleware, optionalAuth, roleMiddleware } from '../middleware/auth'
 
@@ -39,6 +40,9 @@ router.delete('/:id', authMiddleware, deleteArtwork)
 
 // 验证艺术品（拍卖行/管理员权限）
 router.post('/:id/verify', optionalAuth, roleMiddleware('auction_house', 'admin'), verifyArtwork)
+
+// 终止拍卖（作品所有者权限）
+router.post('/:id/terminate', authMiddleware, terminateAuction)
 
 // 驳回并删除艺术品（仅管理员权限）
 router.post('/:id/reject', optionalAuth, roleMiddleware('admin'), rejectArtwork)

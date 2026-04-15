@@ -7,9 +7,10 @@
       </div>
       <div class="header-right">
         <el-radio-group v-model="filterStatus" size="large" @change="handleFilterChange">
-          <el-radio-button value="all">全部记录</el-radio-button>
+          <el-radio-button value="all">全部</el-radio-button>
           <el-radio-button value="pending">待审核</el-radio-button>
-          <el-radio-button value="verified">已通过</el-radio-button>
+          <el-radio-button value="verified">可拍卖</el-radio-button>
+          <el-radio-button value="rejected">被驳回</el-radio-button>
         </el-radio-group>
       </div>
     </div>
@@ -52,11 +53,12 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="审核状态" width="120" align="center">
+        <el-table-column label="状态" width="120" align="center">
           <template #default="{ row }">
-            <el-tag :type="row.isVerified ? 'success' : 'warning'">
-              {{ row.isVerified ? '已通过' : '待审核' }}
-            </el-tag>
+            <el-tag v-if="row.status === 1" type="success">可拍卖</el-tag>
+            <el-tag v-else-if="row.status === 3" type="danger">已驳回</el-tag>
+            <el-tag v-else-if="row.status === 4" type="info" effect="dark">已终止</el-tag>
+            <el-tag v-else type="warning">待审核</el-tag>
           </template>
         </el-table-column>
 
@@ -68,7 +70,7 @@
 
         <el-table-column label="操作" width="240" fixed="right" align="center">
           <template #default="{ row }">
-            <template v-if="!row.isVerified">
+            <template v-if="row.status === 0">
               <el-button 
                 type="success" 
                 size="small" 
@@ -80,19 +82,28 @@
                 type="danger" 
                 size="small" 
                 plain
-                @click="handleReject(row)"
+                @click="handleRejectDialog(row)"
               >
                 驳回
               </el-button>
             </template>
             <el-button 
-              v-else
-              type="warning" 
+              v-else-if="row.status === 1"
+              type="info" 
               size="small" 
               plain
-              @click="handleVerify(row, false)"
+              disabled
             >
-              撤回审核
+              已通过
+            </el-button>
+            <el-button 
+              v-else-if="row.status === 3"
+              type="info" 
+              size="small" 
+              plain
+              disabled
+            >
+              已驳回
             </el-button>
             <el-button 
               type="info" 
@@ -148,6 +159,14 @@
             <span class="label">发布者地址：</span>
             <span class="value font-mono">{{ selectedArtwork.ownerAddress }}</span>
           </div>
+          <div class="info-item">
+            <span class="label">起拍价格：</span>
+            <span class="value price">{{ selectedArtwork.metadata?.startingPrice || '0.1' }} ETH</span>
+          </div>
+          <div class="info-item">
+            <span class="label">最低加价：</span>
+            <span class="value price">{{ selectedArtwork.metadata?.minIncrement || '0.01' }} ETH</span>
+          </div>
         </div>
       </div>
       <template #footer>
@@ -160,6 +179,30 @@
           >
             通过审核
           </el-button>
+        </div>
+      </template>
+    </el-dialog>
+
+    <!-- 驳回理由对话框 -->
+    <el-dialog
+      v-model="rejectVisible"
+      title="填写驳回理由"
+      width="400px"
+    >
+      <el-form :model="rejectForm">
+        <el-form-item label="驳回原因">
+          <el-input 
+            v-model="rejectForm.reason" 
+            type="textarea" 
+            :rows="4" 
+            placeholder="请输入驳回该作品的具体原因，用户修改时可见"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="rejectVisible = false">取消</el-button>
+          <el-button type="danger" @click="confirmReject">确定驳回</el-button>
         </div>
       </template>
     </el-dialog>
@@ -178,7 +221,12 @@ const list = ref<any[]>([])
 const total = ref(0)
 const filterStatus = ref('all')
 const detailVisible = ref(false)
+const rejectVisible = ref(false)
 const selectedArtwork = ref<any>(null)
+const rejectForm = reactive({
+  id: 0,
+  reason: ''
+})
 
 const queryParams = reactive({
   page: 1,
@@ -188,10 +236,13 @@ const queryParams = reactive({
 // 过滤后的列表
 const filteredList = computed(() => {
   if (filterStatus.value === 'pending') {
-    return list.value.filter(item => !item.isVerified)
+    return list.value.filter(item => item.status === 0)
   }
   if (filterStatus.value === 'verified') {
-    return list.value.filter(item => item.isVerified)
+    return list.value.filter(item => item.status === 1)
+  }
+  if (filterStatus.value === 'rejected') {
+    return list.value.filter(item => item.status === 3)
   }
   return list.value
 })
@@ -245,29 +296,28 @@ const handleVerify = async (row: any, status: boolean = true) => {
   }
 }
 
-// 驳回作品
-const handleReject = async (row: any) => {
+// 打开驳回弹窗
+const handleRejectDialog = (row: any) => {
+  rejectForm.id = row.id
+  rejectForm.reason = ''
+  rejectVisible.value = true
+}
+
+// 确认驳回
+const confirmReject = async () => {
+  if (!rejectForm.reason.trim()) {
+    return ElMessage.warning('请输入驳回理由')
+  }
+
   try {
-    await ElMessageBox.confirm(
-      '确定要驳回该作品吗？驳回将直接移除该作品记录及其关联拍卖。', 
-      '驳回确认', 
-      {
-        confirmButtonText: '确定驳回',
-        cancelButtonText: '取消',
-        confirmButtonClass: 'el-button--danger',
-        type: 'error'
-      }
-    )
-    
-    const res = await rejectArtwork(row.id)
+    const res = await rejectArtwork(rejectForm.id, rejectForm.reason)
     if (res.code === 0 || res.code === 200) {
-      ElMessage.success('作品已驳回并清理')
+      ElMessage.success('作品已驳回')
+      rejectVisible.value = false
       fetchData()
     }
   } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error('操作失败')
-    }
+    ElMessage.error('驳回操作失败')
   }
 }
 
@@ -310,7 +360,15 @@ onMounted(() => {
 
   .artwork-detail {
     .detail-image { width: 100%; max-height: 300px; margin-bottom: 20px; border-radius: 8px; overflow: hidden; background: #f5f7fa; display: flex; justify-content: center; .el-image { max-width: 100%; max-height: 100%; } }
-    .detail-info { .info-item { margin-bottom: 12px; display: flex; .label { width: 100px; color: #94a3b8; flex-shrink: 0; } .value { color: #1e293b; line-height: 1.6; word-break: break-all; } .font-mono { font-family: monospace; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 13px; } } }
+    .detail-info { 
+      .info-item { 
+        margin-bottom: 12px; display: flex; 
+        .label { width: 100px; color: #94a3b8; flex-shrink: 0; } 
+        .value { color: #1e293b; line-height: 1.6; word-break: break-all; } 
+        .price { color: #f56c6c; font-weight: 700; font-size: 16px; }
+        .font-mono { font-family: monospace; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 13px; } 
+      } 
+    }
   }
 }
 </style>

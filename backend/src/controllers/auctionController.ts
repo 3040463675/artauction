@@ -66,14 +66,14 @@ export const getAuctions = async (req: Request, res: Response, next: NextFunctio
       ]
     }
 
-    // 排序
-    let order: any = [['createdAt', 'DESC']]
+    // 默认排序：最新审核通过的作品排在最前面 (使用 updatedAt，因为审核通过会更新该时间)
+    let order: any = [['updatedAt', 'DESC']]
     if (sortBy === 'endTime') {
       order = [['endTime', 'ASC']]
     } else if (sortBy === 'highestBid') {
       order = [['highestBid', 'DESC']]
     } else if (sortBy === 'newest') {
-      order = [['createdAt', 'DESC']]
+      order = [['updatedAt', 'DESC']]
     } else if (sortBy === 'priceDesc') {
       order = [['highestBid', 'DESC']]
     } else if (sortBy === 'priceAsc') {
@@ -90,15 +90,24 @@ export const getAuctions = async (req: Request, res: Response, next: NextFunctio
           where: artworkWhere,
           include: [{ model: User, as: 'creator', attributes: ['id', 'address', 'username', 'avatar'] }]
         },
-        { model: User, as: 'seller', attributes: ['id', 'address', 'username', 'avatar'] }
+        { model: User, as: 'seller', attributes: ['id', 'address', 'username', 'avatar'] },
+        { model: Bid, as: 'bids', attributes: ['id'] } // 包含出价记录以统计次数
       ],
       order,
       offset,
-      limit
+      limit,
+      distinct: true // 确保分页计数准确
+    })
+
+    const list = rows.map(item => {
+      const data = item.toJSON() as any
+      data.bidCount = data.bids?.length || 0
+      delete data.bids
+      return data
     })
 
     res.success({
-      list: rows,
+      list,
       total: count,
       page: Number(page),
       pageSize: limit
@@ -454,15 +463,22 @@ export const recordBid = async (req: Request, res: Response, next: NextFunction)
       }
     }
 
-    // 确保出价者用户存在（防止外键约束失败）
+    // 确保出价者用户存在并检查状态
     let user = await User.findOne({ where: { address: bidderAddress } })
     if (!user) {
       console.log(`[Bid] Creating missing user: ${bidderAddress}`)
       user = await User.create({
         address: bidderAddress,
         username: `User_${bidderAddress.slice(2, 6)}`,
-        role: 'buyer'
+        role: 'buyer',
+        enabled: true // 默认启用
       })
+    }
+
+    // 检查用户是否被封禁
+    if (user.enabled === false) {
+      console.warn(`[Bid] Banned user attempted to bid: ${bidderAddress}`)
+      throw new AppError('您的账号已被封禁，无法参与拍卖', -1, 403)
     }
 
     // 创建出价记录

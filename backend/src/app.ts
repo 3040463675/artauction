@@ -32,7 +32,11 @@ app.use(helmet({
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
     ? ['https://your-domain.com'] 
-    : ['http://localhost:3000', 'http://127.0.0.1:3000'],
+    : [
+        'http://localhost:3000', 
+        'http://127.0.0.1:3000',
+        'http://10.216.80.84:3000' // 允许局域网 IP 访问
+      ],
   credentials: true
 }))
 app.use(morgan('dev'))
@@ -191,13 +195,17 @@ const startServer = async () => {
 
     // 同步模型（开发环境）
     if (process.env.NODE_ENV === 'development') {
-      await sequelize.sync({ alter: true })
+      // 使用普通的 sync() 而不是 { alter: true }，避免由于外键约束名称冲突导致的启动失败
+      // 如果需要更新表结构，请运行 npm run db:init (注意这会清空数据)
+      await sequelize.sync()
       console.log('✅ 数据库模型同步完成')
     }
 
-    app.listen(PORT, () => {
-      console.log(`🚀 服务器运行在 http://localhost:${PORT}`)
-      console.log(`📚 API文档: http://localhost:${PORT}/api`)
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`🚀 服务器运行在:`)
+      console.log(`   - 本地:   http://localhost:${PORT}`)
+      console.log(`   - 局域网: http://10.216.80.84:${PORT}`)
+      console.log(`📚 API文档: http://10.216.80.84:${PORT}/api`)
     })
 
     // 启动后台定时任务

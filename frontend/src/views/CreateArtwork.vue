@@ -16,6 +16,21 @@
         <el-row :gutter="32">
           <!-- 左侧：基本信息 -->
           <el-col :xs="24" :md="16">
+            <!-- 驳回理由提示框 (仅在编辑被驳回作品时显示) -->
+            <el-alert
+              v-if="isEdit && artworkStatus === 3"
+              title="作品已被驳回"
+              type="danger"
+              class="rejection-alert"
+              :closable="false"
+              show-icon
+            >
+              <div class="rejection-reason-content">
+                <strong>驳回理由：</strong>
+                <p>{{ auditReason || '未填写具体原因' }}</p>
+              </div>
+            </el-alert>
+
             <el-card class="form-card">
               <template #header>
                 <span>基本信息</span>
@@ -148,19 +163,23 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, computed, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules, UploadProps } from 'element-plus'
 import { useUserStore } from '@/stores/user'
-import { mintArt } from '@/utils/contracts'
-import { createArtwork as apiCreateArtwork } from '@/api/artwork'
+import { createArtwork as apiCreateArtwork, getArtworkById, updateArtwork } from '@/api/artwork'
 
 const router = useRouter()
+const route = useRoute()
 const userStore = useUserStore()
 
 const formRef = ref<FormInstance>()
 const submitting = ref(false)
+const isEdit = ref(false)
+const artworkId = ref<number | null>(null)
+const artworkStatus = ref<number | null>(null) // 新增：作品状态
+const auditReason = ref<string | null>(null) // 新增：驳回理由
 
 const form = reactive({
   name: '',
@@ -171,6 +190,39 @@ const form = reactive({
   startingPrice: 0.1,
   minIncrement: 0.01
 })
+
+onMounted(async () => {
+  const id = route.query.id
+  if (id) {
+    isEdit.value = true
+    artworkId.value = Number(id)
+    loadingArtwork(Number(id))
+  }
+})
+
+const loadingArtwork = async (id: number) => {
+  try {
+    const res = await getArtworkById(id)
+    if (res.code === 0 || res.code === 200) {
+      const data = res.data
+      form.name = data.name
+      form.description = data.description
+      form.categoryId = data.categoryId
+      form.imageUrl = data.imageUrl
+      form.ipfsHash = data.ipfsHash || ''
+      artworkStatus.value = data.status // 存储作品状态
+      auditReason.value = data.auditReason // 存储驳回理由
+      
+      // 提取拍卖参数
+      if (data.metadata) {
+        form.startingPrice = Number(data.metadata.startingPrice) || 0.1
+        form.minIncrement = Number(data.metadata.minIncrement) || 0.01
+      }
+    }
+  } catch (error) {
+    ElMessage.error('获取作品信息失败')
+  }
+}
 
 const rules: FormRules = {
   name: [
@@ -248,23 +300,17 @@ const handleSubmit = async () => {
     try {
       submitting.value = true
 
-      // 1. 铸造 NFT
+      // 1. 移除区块链铸造逻辑，直接提交审核
+      // 提交作品不再需要唤醒 MetaMask 付钱
       let tokenId: any = 0
-      try {
-        ElMessage.info('正在提交至区块链...')
-        tokenId = await mintArt(
-          form.name,
-          form.description,
-          form.imageUrl,
-          form.ipfsHash || 'Qm' + Math.random().toString(36).substring(2, 15)
-        )
-      } catch (error: any) {
-        console.warn('区块链铸造失败，回退到模拟模式:', error.message)
+      if (!isEdit.value) {
+        // 对于新提交的作品，生成一个临时的随机 Token ID 用于标识
+        // 真正的铸造可以放在管理员审核通过后或用户上架时（根据业务需求）
         tokenId = Math.floor(Math.random() * 1000000)
       }
 
       // 2. 同步艺术品到数据库
-      const artworkRes = await apiCreateArtwork({
+      const artworkData = {
         tokenId: Number(tokenId),
         name: form.name,
         description: form.description,
@@ -276,17 +322,24 @@ const handleSubmit = async () => {
           startingPrice: form.startingPrice,
           minIncrement: form.minIncrement
         }
-      })
-
-      if (artworkRes.code !== 0 && artworkRes.code !== 200) {
-        throw new Error(artworkRes.message || '艺术品同步失败')
       }
 
-      ElMessage.success('发布成功！作品已提交审核，审核通过后将正式上架。')
-      router.push('/my-artworks')
+      let artworkRes
+      if (isEdit.value && artworkId.value) {
+        artworkRes = await updateArtwork(artworkId.value, artworkData)
+      } else {
+        artworkRes = await apiCreateArtwork(artworkData)
+      }
+
+      if (artworkRes.code !== 0 && artworkRes.code !== 200) {
+        throw new Error(artworkRes.message || '操作失败')
+      }
+
+      ElMessage.success(isEdit.value ? '修改成功！已重新提交审核。' : '发布成功！作品已提交审核，审核通过后将正式上架。')
+      router.push('/profile')
     } catch (error: any) {
       console.error('Submit failed:', error)
-      ElMessage.error(error.message || '发布失败')
+      ElMessage.error(error.message || '操作失败')
     } finally {
       submitting.value = false
     }
@@ -314,6 +367,30 @@ const handleSubmit = async () => {
 
   .form-card {
     margin-bottom: 24px;
+    border: none;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  }
+
+  .rejection-alert {
+    margin-bottom: 24px;
+    border-radius: 12px;
+    padding: 16px 20px;
+
+    .rejection-reason-content {
+      margin-top: 8px;
+      strong {
+        font-size: 14px;
+        color: #dc2626;
+      }
+      p {
+        margin: 4px 0 0 0;
+        font-size: 15px;
+        color: #ef4444;
+        font-weight: 500;
+        line-height: 1.6;
+      }
+    }
   }
 
   .image-uploader {

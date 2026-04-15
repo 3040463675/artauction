@@ -132,27 +132,39 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { User, Lock, Bell } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { ElMessage } from 'element-plus'
+import { request } from '@/api/request'
 
 const userStore = useUserStore()
 const activeMenu = ref('profile')
 const fileInput = ref<HTMLInputElement | null>(null)
+const uploading = ref(false)
 
 const profileForm = reactive({
-  nickname: userStore.userInfo?.nickname || '',
+  nickname: '',
   email: '',
   bio: '',
-  avatar: userStore.userInfo?.avatar || 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?auto=format&fit=crop&q=80&w=200'
+  avatar: ''
+})
+
+onMounted(() => {
+  // 初始化表单数据
+  if (userStore.userInfo) {
+    profileForm.nickname = userStore.userInfo.username || ''
+    profileForm.email = userStore.userInfo.email || ''
+    profileForm.bio = userStore.userInfo.bio || ''
+    profileForm.avatar = userStore.userInfo.avatar || 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?auto=format&fit=crop&q=80&w=200'
+  }
 })
 
 const triggerUpload = () => {
   fileInput.value?.click()
 }
 
-const handleFileChange = (event: Event) => {
+const handleFileChange = async (event: Event) => {
   const target = event.target as HTMLInputElement
   const file = target.files?.[0]
   if (file) {
@@ -161,11 +173,25 @@ const handleFileChange = (event: Event) => {
       return
     }
     
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      profileForm.avatar = e.target?.result as string
+    // 调用后端上传接口
+    try {
+      uploading.value = true
+      const formData = new FormData()
+      formData.append('file', file)
+      
+      const res: any = await request.post('/upload/image', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+      
+      if (res.code === 0 || res.code === 200) {
+        profileForm.avatar = res.data.url
+        ElMessage.success('头像上传成功')
+      }
+    } catch (err) {
+      ElMessage.error('头像上传失败')
+    } finally {
+      uploading.value = false
     }
-    reader.readAsDataURL(file)
   }
 }
 
@@ -183,14 +209,23 @@ const handleMenuSelect = (index: string) => {
   activeMenu.value = index
 }
 
-const saveProfile = () => {
-  // 更新全局状态，确保同步
-  userStore.setUserInfo({
-    ...userStore.userInfo,
-    nickname: profileForm.nickname,
-    avatar: profileForm.avatar
-  })
-  ElMessage.success('个人资料已成功更新')
+const saveProfile = async () => {
+  try {
+    const res: any = await request.put('/user/info', {
+      username: profileForm.nickname,
+      email: profileForm.email,
+      bio: profileForm.bio,
+      avatar: profileForm.avatar
+    })
+
+    if (res.code === 0 || res.code === 200) {
+      // 更新全局状态
+      userStore.setUserInfo(res.data)
+      ElMessage.success('个人资料已成功更新并存储到数据库')
+    }
+  } catch (err: any) {
+    ElMessage.error(err.message || '更新失败')
+  }
 }
 </script>
 

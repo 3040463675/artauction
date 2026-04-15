@@ -13,7 +13,8 @@
             />
             <div class="user-details">
               <div class="name-row">
-                <h2 class="username">{{ userStore.userInfo?.nickname || '艺术鉴赏家' }}</h2>
+                <h2 class="username">{{ userStore.userInfo?.username || '艺术鉴赏家' }}</h2>
+                <el-tag v-if="userStore.userInfo?.enabled === false" size="small" type="danger" effect="dark" class="ban-tag">你已被封禁</el-tag>
                 <el-tag size="small" effect="dark" class="role-tag">{{ roleName }}</el-tag>
               </div>
               <div class="address-row">
@@ -233,12 +234,23 @@ const copyAddress = () => {
             text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
           }
 
+          .ban-tag {
+            font-weight: bold;
+            animation: pulse 2s infinite;
+          }
+
           .role-tag {
             border-radius: 6px;
             backdrop-filter: blur(4px);
             background: rgba(64, 158, 255, 0.9);
             border: none;
           }
+        }
+
+        @keyframes pulse {
+          0% { opacity: 1; }
+          50% { opacity: 0.6; }
+          100% { opacity: 1; }
         }
 
         .address-row {

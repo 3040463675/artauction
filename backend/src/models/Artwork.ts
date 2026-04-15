@@ -14,6 +14,8 @@ class Artwork extends Model {
   public categoryId!: number | null
   public isVerified!: boolean
   public isOnAuction!: boolean
+  public status!: number // 0: 待审核, 1: 已通过/可拍卖, 2: 已拍出, 3: 已驳回, 4: 已终止
+  public auditReason!: string | null
   public metadata!: object | null
   public readonly createdAt!: Date
   public readonly updatedAt!: Date
@@ -77,6 +79,17 @@ Artwork.init(
       allowNull: false,
       defaultValue: false,
       comment: '是否在拍卖中'
+    },
+    status: {
+      type: DataTypes.TINYINT,
+      allowNull: false,
+      defaultValue: 0,
+      comment: '状态: 0-待审核, 1-已通过, 2-已拍出, 3-已驳回, 4-已终止'
+    },
+    auditReason: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: '审核理由'
     },
     metadata: {
       type: DataTypes.JSON,

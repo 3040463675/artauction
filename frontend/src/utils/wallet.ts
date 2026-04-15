@@ -36,11 +36,24 @@ export const connectWallet = async (): Promise<string> => {
     const chainId = Number(network.chainId)
     userStore.setChainId(chainId)
 
-    // 确保数据库中存在该用户地址
+    // 确保数据库中存在该用户地址并获取最新信息
     try {
-      await request.get('/auth/nonce', { params: { address } })
+      const res: any = await request.get('/auth/nonce', { params: { address } })
+      // 如果后端返回了用户信息（说明是已存在的用户），更新到 store
+      // 注意：这里可能需要根据你的登录逻辑调整，通常 nonce 接口不返回完整用户信息
+      // 如果需要实时状态，可以在这里额外调用 /auth/me (如果已登录) 或在登录后处理
     } catch {
       // 忽略后端不可用时的错误
+    }
+
+    // 关键：登录后或连接后获取最新的用户信息（包含 enabled 状态）
+    try {
+      const meRes: any = await request.get('/auth/me')
+      if (meRes.data) {
+        userStore.setUserInfo(meRes.data)
+      }
+    } catch {
+      // 未登录或 token 无效，跳过
     }
 
     return address
@@ -161,10 +174,20 @@ export const setupWalletListeners = () => {
     window.location.reload()
   })
 
-  // 轮询余额以同步 MetaMask
+  // 轮询余额以同步 MetaMask，并同步用户状态
   setInterval(async () => {
     if (userStore.isConnected) {
       await refreshBalance()
+      
+      // 同步后端最新的用户信息（包含封禁状态）
+      try {
+        const res: any = await request.get('/auth/me')
+        if (res.data) {
+          userStore.setUserInfo(res.data)
+        }
+      } catch (err) {
+        // 如果 401 说明登录失效，不强制处理，由拦截器负责
+      }
     }
   }, 5000)
 }

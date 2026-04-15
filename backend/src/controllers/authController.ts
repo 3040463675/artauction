@@ -87,7 +87,8 @@ export const verifySignature = async (req: Request, res: Response, next: NextFun
         address: user.address,
         username: user.username,
         avatar: user.avatar,
-        role: user.role
+        role: user.role,
+        enabled: user.enabled // 包含封禁状态
       }
     })
   } catch (error) {
@@ -103,7 +104,7 @@ export const getCurrentUser = async (req: Request, res: Response, next: NextFunc
     }
 
     const user = await User.findByPk(req.user.id, {
-      attributes: ['id', 'address', 'username', 'avatar', 'email', 'role', 'bio', 'createdAt']
+      attributes: ['id', 'address', 'username', 'avatar', 'email', 'role', 'bio', 'enabled', 'createdAt']
     })
 
     if (!user) {

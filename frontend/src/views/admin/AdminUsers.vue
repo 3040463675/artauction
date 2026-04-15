@@ -73,8 +73,9 @@
   </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { ethers } from 'ethers'
 import { getUsers, updateUserStatus } from '@/api/user'
 
 type UserItem = {
@@ -95,6 +96,8 @@ const query = reactive({
   keyword: ''
 })
 
+let balanceTimer: any = null
+
 const formatLocalTime = (val: string | number) => {
   if (!val) return '-'
   const date = new Date(val)
@@ -109,6 +112,32 @@ const formatBalance = (val: string | number | null | undefined) => {
   return `${num.toFixed(4)} ETH`
 }
 
+// 核心功能：从区块链获取真实的 ETH 余额
+const fetchRealBalances = async () => {
+  if (!list.value.length) return
+
+  try {
+    const rpcUrl = import.meta.env.VITE_RPC_URL || 'http://127.0.0.1:7545'
+    const provider = new ethers.JsonRpcProvider(rpcUrl)
+
+    // 并发获取所有用户的真实余额
+    const balancePromises = list.value.map(async (user) => {
+      try {
+        if (ethers.isAddress(user.address)) {
+          const balance = await provider.getBalance(user.address)
+          user.balance = ethers.formatEther(balance)
+        }
+      } catch (err) {
+        console.error(`Failed to fetch balance for ${user.address}:`, err)
+      }
+    })
+
+    await Promise.all(balancePromises)
+  } catch (err) {
+    console.error('Failed to connect to RPC provider:', err)
+  }
+}
+
 const fetchList = async () => {
   loading.value = true
   try {
@@ -119,6 +148,9 @@ const fetchList = async () => {
     })
     list.value = res.data?.list || []
     total.value = res.data?.total || 0
+    
+    // 获取列表后立即刷新一次真实余额
+    await fetchRealBalances()
   } catch (e: any) {
     ElMessage.error(e?.message || '加载用户失败')
   } finally {
@@ -147,7 +179,15 @@ const updateStatus = async (row: UserItem, nextEnabled: boolean) => {
   }
 }
 
-onMounted(() => fetchList())
+onMounted(() => {
+  fetchList()
+  // 每 5 秒自动同步一次余额
+  balanceTimer = setInterval(fetchRealBalances, 5000)
+})
+
+onUnmounted(() => {
+  if (balanceTimer) clearInterval(balanceTimer)
+})
 </script>
 
 <style scoped lang="scss">

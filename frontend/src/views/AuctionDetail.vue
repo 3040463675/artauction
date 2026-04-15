@@ -185,22 +185,37 @@
                       size="large"
                       class="bid-btn premium-btn"
                       :loading="bidding"
-                      :disabled="isCancelled || battleState !== 'active' || !isMyTurn"
+                      :disabled="isCancelled || battleState !== 'active' || !isMyTurn || userStore.userInfo?.enabled === false || isOwner"
                       @click="handleBid"
                     >
-                      {{ !isMyTurn ? '等待他人出价' : '参与竞拍' }}
+                      {{ isOwner ? '您是发布者' : (userStore.userInfo?.enabled === false ? '账号已被封禁' : (!isMyTurn ? '等待他人出价' : '参与竞拍')) }}
+                    </el-button>
+                    
+                    <!-- 发布者显示终止拍卖，普通用户显示退出竞拍 -->
+                    <el-button
+                      v-if="isOwner && auction.status === 1 && !isCancelled"
+                      type="danger"
+                      size="large"
+                      class="terminate-btn"
+                      plain
+                      :loading="terminating"
+                      @click="handleTerminateAuction"
+                    >
+                      终止拍卖
                     </el-button>
                     <el-button
+                      v-else-if="!isOwner"
                       type="danger"
                       size="large"
                       class="cancel-btn"
                       plain
-                      :disabled="isCancelled"
+                      :disabled="isCancelled || userStore.userInfo?.enabled === false"
                       @click="handleCancelBid"
                     >
                       退出竞拍
                     </el-button>
                   </div>
+                  <p v-if="userStore.userInfo?.enabled === false" class="ban-hint">您的账号已被管理员封禁，暂时无法参与拍卖操作。</p>
                 </div>
               </div>
             </template>
@@ -227,7 +242,27 @@
           <el-tabs v-model="activeTab" class="premium-tabs">
             <el-tab-pane label="作品详情" name="desc">
               <div class="content-panel">
-                <p class="description-text">{{ auction.artwork?.description || '暂无描述' }}</p>
+                <template v-if="auction.artwork?.status === 3">
+                  <div class="rejection-notice">
+                    <div class="notice-header">
+                      <el-icon><Warning /></el-icon>
+                      <span>作品已被驳回</span>
+                    </div>
+                    <div class="notice-reason">
+                      <strong>驳回理由：</strong>
+                      <p>{{ auction.artwork?.auditReason || '未填写具体原因' }}</p>
+                    </div>
+                    <el-button 
+                      v-if="auction.artwork?.ownerAddress?.toLowerCase() === userStore.address?.toLowerCase()"
+                      type="primary" 
+                      class="resubmit-btn"
+                      @click="handleEditAndResubmit"
+                    >
+                      修改并重新提交
+                    </el-button>
+                  </div>
+                </template>
+                <p v-else class="description-text">{{ auction.artwork?.description || '暂无描述' }}</p>
               </div>
             </el-tab-pane>
             <el-tab-pane label="出价历史" name="history">
@@ -291,16 +326,17 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   User, Link, Lock,
-  CircleCheckFilled, TopRight, Clock
+  CircleCheckFilled, TopRight, Clock, Warning
 } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
 import { useUserStore } from '@/stores/user'
 import { endAuction } from '@/utils/contracts'
 import { getAuctionById, getBidHistory, recordBid, updateAuctionStatus } from '@/api/auction'
+import { terminateAuction } from '@/api/artwork'
 import CountdownTimer from '@/components/CountdownTimer.vue'
 import { mockAuctions } from '@/utils/mockData'
 import { formatPrice } from '@/utils/format'
@@ -314,6 +350,7 @@ const userStore = useUserStore()
 const loading = ref(false)
 const bidding = ref(false)
 const ending = ref(false)
+const terminating = ref(false)
 const isCancelled = ref(false)
 const settleTime = ref('')
 const battleState = ref<'waiting' | 'active' | 'success' | 'cancelled'>('waiting')
@@ -332,6 +369,17 @@ const auction = ref<any>(null)
 const bidHistory = ref<any[]>([])
 const bidAmount = ref(0)
 const activeTab = ref('desc')
+
+const router = useRouter()
+
+const handleEditAndResubmit = () => {
+  if (auction.value?.artwork?.id) {
+    router.push({
+      path: '/create',
+      query: { id: auction.value.artwork.id }
+    })
+  }
+}
 
 // ==========================================
 // 实时竞拍数据管理
@@ -939,6 +987,12 @@ const isMine = computed(() => {
   )
 })
 
+const isOwner = computed(() => {
+  if (!auction.value || !userStore.isConnected) return false
+  const owner = auction.value.artwork?.ownerAddress || auction.value.sellerAddress
+  return owner?.toLowerCase() === userStore.address?.toLowerCase()
+})
+
 const minBid = computed(() => {
   if (!auction.value) return 0
   const highest = Number(auction.value.highestBid) || 0
@@ -1113,6 +1167,36 @@ const fetchAuctionDetail = async () => {
     ElMessage.error('加载拍卖详情失败')
   } finally {
     loading.value = false
+  }
+}
+
+const handleTerminateAuction = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '确定要终止本次拍卖吗？终止后作品将下架并标记为“已终止”，可在“我的作品”中查看。',
+      '终止确认',
+      { 
+        confirmButtonText: '确定终止', 
+        cancelButtonText: '取消', 
+        type: 'error',
+        confirmButtonClass: 'el-button--danger'
+      }
+    )
+    
+    terminating.value = true
+    const artworkId = auction.value.artwork?.id || auction.value.artworkId
+    const res = await terminateAuction(artworkId)
+    if (res.code === 0 || res.code === 200) {
+      ElMessage.success('拍卖已终止，作品已移至“已终止”列表')
+      router.push('/my-artworks')
+    }
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      console.error('Terminate failed:', error)
+      ElMessage.error(error.message || '终止失败')
+    }
+  } finally {
+    terminating.value = false
   }
 }
 
@@ -1515,6 +1599,14 @@ watch(() => userStore.address, (newAddr) => {
               color: #1a1a2e;
             }
           }
+
+          .ban-hint {
+            margin-top: 10px;
+            color: #f56c6c;
+            font-size: 13px;
+            font-weight: 600;
+            text-align: center;
+          }
         }
 
         .action-buttons {
@@ -1525,14 +1617,20 @@ watch(() => userStore.address, (newAddr) => {
 
           .bid-btn {
             height: 56px;
-            border-radius: 12px;
+            font-size: 18px;
             font-weight: 700;
-            font-size: 16px;
+            border-radius: 12px;
           }
-          .cancel-btn {
+
+          .cancel-btn, .terminate-btn {
             height: 48px;
             border-radius: 12px;
+            font-weight: 600;
           }
+        }
+
+        .w-full {
+          width: 100%;
         }
       }
     }
@@ -1639,6 +1737,65 @@ watch(() => userStore.address, (newAddr) => {
         line-height: 1.8;
         color: #555;
         white-space: pre-line;
+      }
+
+      .rejection-notice {
+        background: #fef2f2;
+        border: 1px solid #fee2e2;
+        border-radius: 20px;
+        padding: 40px;
+        text-align: center;
+        margin: 10px 0;
+
+        .notice-header {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 12px;
+          color: #dc2626;
+          font-size: 22px;
+          font-weight: 800;
+          margin-bottom: 24px;
+        }
+
+        .notice-reason {
+          background: #fff;
+          border-radius: 16px;
+          padding: 24px;
+          margin-bottom: 30px;
+          text-align: left;
+          box-shadow: 0 4px 12px rgba(220, 38, 38, 0.05);
+
+          strong {
+            display: block;
+            color: #1e293b;
+            font-size: 16px;
+            margin-bottom: 12px;
+          }
+
+          p {
+            margin: 0;
+            color: #ef4444;
+            font-size: 18px;
+            font-weight: 600;
+            line-height: 1.6;
+          }
+        }
+
+        .resubmit-btn {
+          width: 240px;
+          height: 54px;
+          font-size: 18px;
+          font-weight: 700;
+          border-radius: 14px;
+          box-shadow: 0 10px 20px rgba(64, 158, 255, 0.2);
+          transition: all 0.3s;
+          
+          &:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 15px 25px rgba(64, 158, 255, 0.3);
+          }
+        }
       }
 
       .bidder-cell {
